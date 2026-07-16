@@ -1,5 +1,7 @@
 # Foundation Setup Report
 
+> Historical record: this report reflects the repository and toolchain at the time it was generated. Current policy is defined by `AGENTS.md` and current project configuration.
+
 ## Overall status
 
 **PASS WITH WARNINGS**

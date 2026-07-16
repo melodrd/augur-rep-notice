@@ -17,9 +17,9 @@ This file defines the standing instructions for Codex and any other coding agent
 When instructions conflict, follow this order:
 
 1. Explicit instructions from the human maintainer in the current task.
-2. `SPEC.md`, once approved and committed.
-3. `THREAT_MODEL.md`.
-4. `DEPLOYMENT_RUNBOOK.md`.
+2. `docs/product/SPEC.md`, once approved and committed.
+3. `docs/security/THREAT_MODEL.md`.
+4. `docs/operations/DEPLOYMENT_RUNBOOK.md`.
 5. This `AGENTS.md`.
 6. Existing tests and code comments.
 7. General conventions or agent preferences.
@@ -83,7 +83,7 @@ The system must not optimize for:
 
 ## 5. Current product assumptions
 
-Until `SPEC.md` states otherwise, use these assumptions:
+Until `docs/product/SPEC.md` states otherwise, use these assumptions:
 
 - The notice token is an informational artifact only.
 - It has no economic value.
@@ -112,7 +112,7 @@ Until `SPEC.md` states otherwise, use these assumptions:
 - The contract does not contain payable functions.
 - The contract does not expose withdrawal or recovery functions unless an approved specification explicitly requires them.
 
-Any change to these assumptions requires an explicit update to `SPEC.md` and corresponding tests.
+Any change to these assumptions requires an explicit update to `docs/product/SPEC.md` and corresponding tests.
 
 ---
 
@@ -226,9 +226,19 @@ Preserve this structure unless there is a documented reason to change it:
 .
 ├── AGENTS.md
 ├── README.md
-├── SPEC.md
-├── THREAT_MODEL.md
-├── DEPLOYMENT_RUNBOOK.md
+├── docs/
+│   ├── README.md
+│   ├── product/
+│   │   └── SPEC.md
+│   ├── security/
+│   │   └── THREAT_MODEL.md
+│   ├── planning/
+│   │   └── ROADMAP.md
+│   ├── operations/
+│   │   └── DEPLOYMENT_RUNBOOK.md
+│   └── reports/
+│       ├── TOOLCHAIN_SETUP_REPORT.md
+│       └── FOUNDATION_SETUP_REPORT.md
 ├── foundry.toml
 ├── remappings.txt
 ├── Makefile
@@ -364,7 +374,7 @@ When setting a batch maximum:
 - account for worst-case calldata;
 - account for block gas constraints;
 - leave operational safety margin;
-- document the result in `SPEC.md` or a gas report.
+- document the result in `docs/product/SPEC.md` or a gas report.
 
 ### 9.4 Non-transferability
 
@@ -430,7 +440,7 @@ Do not encode a URL in a way that implies the user should trust an arbitrary cli
 
 ## 10. Security invariants
 
-The following properties are mandatory unless `SPEC.md` explicitly changes them.
+The following properties are mandatory unless `docs/product/SPEC.md` explicitly changes them.
 
 ### 10.1 Balance invariants
 
@@ -927,8 +937,8 @@ Follow this sequence unless the runbook defines stricter requirements.
 
 ### Phase 1: Specification
 
-- Approve `SPEC.md`.
-- Approve `THREAT_MODEL.md`.
+- Approve `docs/product/SPEC.md`.
+- Approve `docs/security/THREAT_MODEL.md`.
 - Define token metadata.
 - Define administrative model.
 - Define recipient eligibility.
@@ -1113,7 +1123,7 @@ Consider at least:
 - failure to finalize;
 - source-verification mismatch.
 
-Update `THREAT_MODEL.md` when implementation or operations introduce a new category.
+Update `docs/security/THREAT_MODEL.md` when implementation or operations introduce a new category.
 
 ---
 
@@ -1386,9 +1396,9 @@ Create:
 - `foundry.toml`;
 - dependency pins;
 - folder structure;
-- `SPEC.md`;
-- `THREAT_MODEL.md`;
-- `DEPLOYMENT_RUNBOOK.md`;
+- `docs/product/SPEC.md`;
+- `docs/security/THREAT_MODEL.md`;
+- `docs/operations/DEPLOYMENT_RUNBOOK.md`;
 - CI;
 - standard commands.
 
@@ -1462,7 +1472,7 @@ Generate unsigned artifacts only.
 
 When beginning from an empty repository, use this task:
 
-> Initialize a Foundry-first repository for the REP Migration Notice project. Read `AGENTS.md` fully. Create the documented directory structure, pin the compiler and dependencies, add placeholder `SPEC.md`, `THREAT_MODEL.md`, and `DEPLOYMENT_RUNBOOK.md` files with decision sections, configure formatting/build/test commands, and create CI that runs formatting, compilation, tests, contract-size checks, and Slither. Do not implement the production contract, do not create deployment credentials, and do not broadcast any transaction. Show the complete diff and report every command run.
+> Initialize a Foundry-first repository for the REP Migration Notice project. Read `AGENTS.md` fully. Create the documented directory structure, pin the compiler and dependencies, add placeholder `docs/product/SPEC.md`, `docs/security/THREAT_MODEL.md`, and `docs/operations/DEPLOYMENT_RUNBOOK.md` files with decision sections, configure formatting/build/test commands, and create CI that runs formatting, compilation, tests, contract-size checks, and Slither. Do not implement the production contract, do not create deployment credentials, and do not broadcast any transaction. Show the complete diff and report every command run.
 
 ---
 
@@ -1489,7 +1499,7 @@ Do not guess these values:
 - public communications language;
 - incident-response procedure.
 
-Track unresolved decisions in `SPEC.md`.
+Track unresolved decisions in `docs/product/SPEC.md`.
 
 ---
 

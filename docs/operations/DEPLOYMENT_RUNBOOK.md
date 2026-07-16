@@ -1,5 +1,9 @@
 # Deployment Runbook
 
+Status: Placeholder / unapproved
+
+This runbook is reserved for future human-controlled deployment preparation. It does not authorize deployment, signing, transaction submission, RPC access, or Safe operation. The draft [product specification](../product/SPEC.md) and [threat model](../security/THREAT_MODEL.md) must be approved before this checklist becomes operational.
+
 ## Document approval
 
 - [ ] Approved specification

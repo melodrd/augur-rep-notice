@@ -1,35 +1,34 @@
 # Roadmap
 
-Phase 1 is complete. Phase 2 is the next milestone and has not started. Later phases require their stated entry conditions and explicit maintainer decisions.
+Foundation and reproducibility are complete. Product specification is in progress and still requires maintainer approval. No later phase has started.
 
 ## 1. Foundation and reproducibility — Complete
 
 - Objective: Establish a minimal, pinned Foundry and Bun repository.
 - Deliverables: Git foundation, dependencies, directory layout, documentation, Makefile, CI, and foundation checks.
-- Entry conditions: Toolchain setup report reviewed; no recoverable Git history present.
-- Exit conditions: All local verification passes and the initial foundation commit is created.
+- Exit status: Completed and recorded in the historical [foundation report](../reports/FOUNDATION_SETUP_REPORT.md).
 - Non-goals: Production Solidity, recipient logic, RPC access, wallets, deployments, and transactions.
 
-## 2. Product specification — Next, not started
+## 2. Product specification — In progress
 
-- Objective: Approve the notice’s exact meaning and product behavior.
-- Deliverables: Approved metadata, authority, finalization, eligibility, and communications decisions.
+- Objective: Define the notice's exact meaning and product behavior without implementing it.
+- Deliverables: Reviewable contract behavior, metadata constraints, authority and finalization proposals, security invariants, acceptance criteria, and open maintainer decisions.
 - Entry conditions: Phase 1 complete.
-- Exit conditions: Maintainers approve `SPEC.md` with no security-critical ambiguity.
-- Non-goals: Contract implementation or recipient extraction.
+- Exit conditions: Maintainers approve [`docs/product/SPEC.md`](../product/SPEC.md) with no unresolved contract-level ambiguity.
+- Non-goals: Contract implementation, tests, recipient extraction, RPC access, or deployment.
 
 ## 3. Threat model and acceptance criteria — Not started
 
-- Objective: Convert approved product behavior into reviewed risks and testable gates.
-- Deliverables: Updated threat model, abuse cases, invariants, and acceptance criteria.
+- Objective: Review the approved behavior against abuse cases and convert it into accepted security and test gates.
+- Deliverables: Approved threat model, owned mitigations, invariants, and acceptance criteria.
 - Entry conditions: Product specification approved.
-- Exit conditions: Maintainers accept mitigations and unresolved-risk ownership.
+- Exit conditions: Maintainers accept mitigations and assign ownership for unresolved operational risks.
 - Non-goals: Claiming an audit or absence of vulnerabilities.
 
 ## 4. Minimal contract implementation — Not started
 
 - Objective: Implement only the approved notice behavior.
-- Deliverables: One short production contract with authorization, unique distribution, non-transferability, and finalization.
+- Deliverables: One short production contract with approved authorization, unique distribution, non-transferability, and finalization behavior.
 - Entry conditions: Phases 2 and 3 complete.
 - Exit conditions: Implementation matches the approved specification and compiles without unresolved warnings.
 - Non-goals: Snapshot tooling, deployment, upgradeability, callbacks, claims, or generalized frameworks.
@@ -39,7 +38,7 @@ Phase 1 is complete. Phase 2 is the next milestone and has not started. Later ph
 - Objective: Exercise contract behavior and mandatory security invariants.
 - Deliverables: Unit, fuzz, invariant, coverage, gas, and Slither reports.
 - Entry conditions: Minimal contract candidate exists.
-- Exit conditions: Relevant checks pass and findings are resolved or explicitly accepted.
+- Exit conditions: Relevant checks pass and findings are resolved or explicitly accepted by maintainers.
 - Non-goals: Treating test coverage as an audit.
 
 ## 6. Snapshot and recipient tooling — Not started
@@ -47,8 +46,8 @@ Phase 1 is complete. Phase 2 is the next milestone and has not started. Later ph
 - Objective: Build deterministic, evidence-backed recipient data processing.
 - Deliverables: Schemas, fixtures, validation, filtering, reason codes, checksums, batches, and reconciliation.
 - Entry conditions: Eligibility and migration rules approved.
-- Exit conditions: Same inputs reproduce identical reviewed outputs.
-- Non-goals: Public RPC access without an approved pinned plan or manual production manifest edits.
+- Exit conditions: The same reviewed inputs reproduce identical outputs.
+- Non-goals: Public RPC access without an approved pinned plan or manual production-manifest edits.
 
 ## 7. Pinned mainnet-fork simulation — Not started
 

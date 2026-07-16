@@ -1,6 +1,8 @@
 # Toolchain Setup Report
 
-> **Historical record:** This report predates repository initialization and records disposable pnpm and `tsx` smoke tests. It is not current repository policy. `AGENTS.md`, `README.md`, `ops/README.md`, `.bun-version`, and `ops/package.json` are authoritative; Bun `1.3.14` is the sole repository JavaScript package manager and `tsx` must not be added.
+> Historical record: this report reflects the repository and toolchain at the time it was generated. Current policy is defined by `AGENTS.md` and current project configuration.
+
+References to pnpm or `tsx` below reflect an earlier environment-verification stage and are not current repository policy. Bun is the repository's JavaScript package manager and TypeScript runtime.
 
 ## Summary
 
