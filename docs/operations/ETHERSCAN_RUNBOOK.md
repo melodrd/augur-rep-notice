@@ -13,8 +13,8 @@ Do not invent a submission URL or assume a current process before that review.
 - Verify the contract source.
 - Expose the correct ABI.
 - Display the correct contract name where supported.
-- Display the exact token name `REP MIGRATION ALERT`.
-- Display the exact symbol `CHECKREP`.
+- Display the exact token name `CHECK AUGUR REP MIGRATION`.
+- Display the exact symbol `MIGRATEREP`.
 - Display decimals `0`.
 - Associate the verified official Augur website where supported.
 - Submit a reviewed logo where supported.
@@ -32,10 +32,11 @@ Do not invent a submission URL or assume a current process before that review.
 - [ ] Constructor arguments are independently decoded
 - [ ] Deployed runtime bytecode matches the reviewed candidate
 - [ ] Exact ABI is recorded
-- [ ] On-chain name is `REP MIGRATION ALERT`
-- [ ] On-chain symbol is `CHECKREP`
+- [ ] On-chain name is `CHECK AUGUR REP MIGRATION`
+- [ ] On-chain symbol is `MIGRATEREP`
 - [ ] On-chain decimals are `0`
 - [ ] Immutable authority and cap are confirmed
+- [ ] `totalIssued`, active `totalSupply`, and representative `wasAlerted` reads are confirmed
 - [ ] Finalization state is confirmed
 - [ ] Official Augur page and approved description are ready
 - [ ] Current official Etherscan instructions have been reviewed
@@ -52,6 +53,8 @@ Stop when any source, bytecode, metadata, address, chain, link, or account requi
 - [ ] Record the resulting verification URL
 - [ ] Confirm the displayed source matches the frozen source
 - [ ] Confirm the displayed ABI matches the approved ABI
+- [ ] Confirm the ABI includes only the approved `burn()`, `totalIssued()`, and `wasAlerted(address)` additions
+- [ ] Confirm `burn(uint256)`, `burnFrom`, authority burn, delegated burn, and generalized burn helpers are absent
 - [ ] Compare deployed runtime bytecode directly with the reviewed runtime hash
 - [ ] Do not rely on Etherscan verification status as the sole bytecode check
 - [ ] Preserve errors, responses, and resubmission history
@@ -62,8 +65,8 @@ Prepare only reviewed information:
 
 - checksummed contract address;
 - chain;
-- exact token name `REP MIGRATION ALERT`;
-- exact symbol `CHECKREP`;
+- exact token name `CHECK AUGUR REP MIGRATION`;
+- exact symbol `MIGRATEREP`;
 - decimals `0`;
 - official Augur website URL;
 - approved non-economic description;
@@ -73,9 +76,14 @@ Prepare only reviewed information:
 
 Approved concise description:
 
-> REP MIGRATION ALERT is a non-economic on-chain alert related to Augur REP migration. It is not REP, migrated REP, replacement REP, a claim, or an asset with value. Receiving it performs no migration and requires no interaction. Verify the contract address and migration information through the official Augur website.
+> CHECK AUGUR REP MIGRATION is a non-economic on-chain alert directing recipients to independently check official
+> Augur REP migration information. It is not REP, migrated REP, replacement REP, a claim, or an asset with value.
+> Receiving it performs no migration and requires no action. An active holder may optionally self-burn only their own
+> unit directly through the verified canonical contract, but burning is not required and provides no migration or
+> economic benefit. Never use a third-party burn website, approval, signature, or wallet-connect flow.
 
-Do not add trading, price, liquidity, reward, claim, migration-effect, urgency, wallet-connect, or interaction language.
+Do not add trading, price, liquidity, reward, claim, migration-effect, urgency, wallet-connect, or interaction language
+beyond the approved optional direct holder self-burn wording.
 
 ## 5. Logo controls
 
@@ -116,6 +124,9 @@ Record:
 | Decimals | Exact on-chain value |
 | Authority | Immutable checksummed EOA |
 | Cap | Immutable distribution cap |
+| Total issued | Permanent count of unique addresses ever alerted |
+| Active supply | Current count of active, unburned units |
+| Alert history | Representative `wasAlerted` verification and burn-event reconciliation |
 | Finalization | Current finalized state |
 | Website | Approved official Augur URL |
 | Description | Approved submitted text |
@@ -132,13 +143,15 @@ Do not record private keys, seed phrases, recovery phrases, raw keystores, or se
 - [ ] Source-verification page loads and identifies the correct chain and contract
 - [ ] Source, compiler, constructor data, and ABI are correct
 - [ ] Runtime bytecode still matches the reviewed candidate
-- [ ] Displayed name is `REP MIGRATION ALERT` where supported
-- [ ] Displayed symbol is `CHECKREP` where supported
+- [ ] Displayed name is `CHECK AUGUR REP MIGRATION` where supported
+- [ ] Displayed symbol is `MIGRATEREP` where supported
 - [ ] Displayed decimals are `0`
 - [ ] Website points to the approved official Augur page where supported
 - [ ] Description is accurate and non-economic
 - [ ] Logo is the reviewed asset where supported
 - [ ] No incorrect claim, price implication, migration effect, or interaction instruction appears
+- [ ] Any optional burn wording requires the exact canonical contract, states that burn is holder-only and optional,
+      and makes no migration, economic, or history-erasure claim
 - [ ] Any third-party price, liquidity, or market presentation is treated as non-canonical
 - [ ] Evidence screenshots or records are preserved with dates
 

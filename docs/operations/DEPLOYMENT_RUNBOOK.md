@@ -2,7 +2,9 @@
 
 Status: Approved design-stage controls; non-operational
 
-This runbook defines future human-controlled deployment, distribution, reconciliation, and finalization checks for `REP MIGRATION ALERT`. It does not authorize RPC access, wallet or key handling, deployment, signing, submission, or broadcast.
+This runbook defines future human-controlled deployment, distribution, reconciliation, and finalization checks for
+`CHECK AUGUR REP MIGRATION`. It does not authorize RPC access, wallet or key handling, deployment, signing, submission,
+or broadcast.
 
 Agents may prepare unsigned artifacts and simulations only when an explicit task authorizes that work. Agents must never access the authority private key, sign, submit, or broadcast.
 
@@ -59,19 +61,25 @@ Do not work around a stop condition. Preserve the evidence and return the decisi
 - [ ] Authority is one nonzero constructor-supplied immutable address
 - [ ] No hidden deployer permission, owner, role, handoff, successor, recovery, or secondary administrator exists
 - [ ] Immutable cap is nonzero and enforced
-- [ ] Transfers, transfer-from, approvals, permits, allowance helpers, operator approvals, and burns are disabled or absent as specified
+- [ ] Transfers, transfer-from, approvals, permits, allowance helpers, and operator approvals are disabled or absent
+- [ ] `burn()` permits only an active holder to remove their own unit
+- [ ] Authority burn, delegated burn, `burnFrom`, signature burn, batch burn, and burn recovery are absent
+- [ ] Burn preserves permanent `wasAlerted` history, leaves `totalIssued` unchanged, and cannot restore cap headroom
 - [ ] Finalization is explicit, one-time, irreversible, and closes every issuance path
+- [ ] Valid holder self-burn remains available after finalization
 - [ ] Events and public reads match the specification
 - [ ] No REP, migration-contract, arbitrary-call, callback, hook, payable, receive, fallback, withdrawal, recovery, proxy, upgrade, or delegatecall path exists
 - [ ] Contract behavior is independent of ETH balance
 
 ## 5. Metadata
 
-- [ ] Name is compiled as `REP MIGRATION ALERT`
-- [ ] Symbol is compiled as `CHECKREP`
+- [ ] Name is compiled as `CHECK AUGUR REP MIGRATION`
+- [ ] Symbol is compiled as `MIGRATEREP`
 - [ ] Decimals are compiled as `0`
 - [ ] Constructor accepts no configurable metadata
+- [ ] Initial `totalIssued` is zero
 - [ ] Initial total supply is zero
+- [ ] Initial balances are zero and `wasAlerted` is false
 - [ ] Constructor issues no alert units
 - [ ] Deployer receives no inventory
 
@@ -85,7 +93,9 @@ Do not work around a stop condition. Preserve the evidence and return the decisi
 - [ ] Independent reproduction produced the same recipients and checksums
 - [ ] Immutable `distributionCap` equals the exact unique-address count
 - [ ] Cap is nonzero
-- [ ] Cap-boundary success and cap-overflow atomic failure are demonstrated
+- [ ] Cap-boundary success and cap-overflow atomic failure are demonstrated against `totalIssued`
+- [ ] Burned recipients remain ineligible for reissuance
+- [ ] Burning never increases remaining issuance capacity
 - [ ] No discretionary margin or unused issuance headroom was added
 - [ ] A material recipient change after deployment is treated as a redeployment decision
 
@@ -95,6 +105,8 @@ Do not work around a stop condition. Preserve the evidence and return the decisi
 - [ ] Calldata cost is included
 - [ ] Measurements cover `1`, `10`, `25`, `50`, `100`, `200`, and `500` when feasible
 - [ ] Measurements cover the proposed maximum, duplicate, prior-recipient, cap-boundary, cap-overflow, and other revert cases
+- [ ] V2 measurements cover successful and failed burns, burned-recipient reissuance, cap boundaries after burns, and
+      finalization after burns
 - [ ] Pinned target-chain block gas limit is recorded
 - [ ] Worst-case successful use is no more than 50% of that limit
 - [ ] A lower maximum is used when execution, calldata, transaction tooling, or signing workflow is stricter
@@ -124,7 +136,8 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] No private key, seed phrase, recovery phrase, raw keystore, or secret environment value is stored in project files, scripts, shell history, documentation, or logs
 - [ ] No agent or automated tool has key access
 - [ ] Project owner understands that key loss can prevent distribution and finalization
-- [ ] Project owner understands that compromise can cause wrong-recipient issuance within the remaining cap or premature finalization
+- [ ] Project owner understands that compromise can cause wrong-recipient issuance within the remaining issuance
+      capacity (`distributionCap - totalIssued`) or premature finalization
 - [ ] Project owner accepts the single-person authorization model
 
 ## 9. Deployment and constructor review
@@ -150,10 +163,15 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] Metadata, constructor, authority, and cap semantics match the candidate
 - [ ] One-address canary and representative batches are exercised
 - [ ] Empty, zero, duplicate, prior-recipient, oversized, unauthorized, finalized, and cap-overflow failures are exercised
-- [ ] Batch calldata, events, balances, supply, and cap headroom reconcile
+- [ ] Active-holder burn, never-alerted burn, repeated burn, burned-recipient reissuance, and cap behavior after burns
+      are exercised
+- [ ] A contract recipient successfully self-burns by calling from the contract
+- [ ] Burn succeeds both before and after finalization
+- [ ] Batch calldata, issuance events, burn events, balances, `wasAlerted`, `totalIssued`, active `totalSupply`, and cap
+      headroom reconcile
 - [ ] Normal and emergency finalization procedures are rehearsed
 - [ ] Repeated finalization and post-finalization distribution fail
-- [ ] Existing balances remain after finalization
+- [ ] Finalization itself changes no balance or counter, and valid holder burns remain possible afterward
 - [ ] Rehearsal findings are independently reviewed
 - [ ] Candidate changes after rehearsal require a new rehearsal
 
@@ -163,8 +181,12 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] Exact official Augur page URL is approved
 - [ ] Official page states chain, verified address, source-verification link, alert meaning, safety warning, and migration information
 - [ ] Contract address is published only after independent chain, address, bytecode, and source checks
-- [ ] Communications do not request approval, transfer, swap, burn, bridge, claim, signature, or wallet connection
-- [ ] Communications explain `CHECKREP` as checking official information independently
+- [ ] Communications require no action and do not request approval, transfer, swap, bridge, claim, signature, third-party
+      burn service, or wallet connection
+- [ ] Communications explain `MIGRATEREP` as the migration subject, not REP or a migration transaction instruction
+- [ ] Optional self-burn is described only as a direct holder action through the verified canonical contract
+- [ ] Communications state that burn is not required, provides no migration or economic benefit, and cannot erase
+      history or cached records
 - [ ] Communications warn that copied metadata, price, liquidity, and third-party display do not establish authenticity or value
 - [ ] Correction and incident owners are assigned
 - [ ] Etherscan work follows [`ETHERSCAN_RUNBOOK.md`](ETHERSCAN_RUNBOOK.md)
@@ -180,21 +202,23 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] Authority and cap configuration are simulated
 - [ ] Canary, representative, maximum-size, and failure cases are simulated
 - [ ] Every batch uses approved ordering and checksum
-- [ ] Balances, events, supply, and cap headroom reconcile after every batch
+- [ ] Balances, permanent history, issuance events, burn events, `totalIssued`, active `totalSupply`, and cap headroom
+      reconcile after every batch
 - [ ] Normal finalization is simulated after the required state
 - [ ] Emergency finalization is simulated from an interrupted rollout
-- [ ] Post-finalization distribution, transfer, approval, and repeated finalization fail
+- [ ] Post-finalization distribution, transfer, approval, and repeated finalization fail while valid holder burn succeeds
 - [ ] Results are independently reviewed
 
 ## 13. Unsigned artifact review
 
 - [ ] Every artifact states network and chain ID
 - [ ] Deployment target, value, creation data, constructor data, and nonce are decoded
-- [ ] Every batch records input checksum, recipient checksum, count, first and last address, and expected cumulative supply
+- [ ] Every batch records input checksum, recipient checksum, count, first and last address, expected cumulative
+      `totalIssued`, and separately reconciled active `totalSupply`
 - [ ] Batch calldata equals the approved canonical recipient array
 - [ ] Batch size is within the frozen maximum
-- [ ] Expected supply never exceeds the cap
-- [ ] Finalization calldata and expected final supply are reviewed
+- [ ] Expected `totalIssued` never exceeds the cap
+- [ ] Finalization calldata and expected `finalIssued` are reviewed; current active `totalSupply` is recorded separately
 - [ ] Emergency-finalization calldata is prepared and simulated
 - [ ] Transaction target, value, calldata, nonce, simulation, and expected state change are reviewed
 - [ ] Independent artifact and checksum review is complete
@@ -218,21 +242,28 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] No batch is repeated, skipped, reordered, or substituted without approval
 - [ ] Each confirmed transaction is decoded and reconciled before the next batch
 - [ ] Issuance events exactly match the submitted array
-- [ ] Every recipient balance is one
+- [ ] Every issued address has `wasAlerted == true`
+- [ ] Active recipients have balance one and burned recipients have balance zero
+- [ ] Burn events are recorded and reconcile with active-balance reductions
 - [ ] Sampled nonrecipients remain zero
-- [ ] Cumulative supply equals unique successful recipients
-- [ ] Remaining cap equals remaining approved recipients
+- [ ] `totalIssued` equals unique successful recipients
+- [ ] `totalSupply` equals active, unburned units
+- [ ] `totalSupply <= totalIssued <= distributionCap`
+- [ ] Remaining issuance capacity equals `distributionCap - totalIssued`
+- [ ] Burned recipients remain permanently ineligible for reissuance
 - [ ] Gas, nonce, replacement, EOA activity, and unexpected events are monitored
 - [ ] Any mismatch activates a stop condition
 
 ## 16. Normal finalization
 
 - [ ] Every intended batch is confirmed
-- [ ] Events, balances, cumulative supply, manifest count, and cap are reconciled
+- [ ] Issuance and burn events, statuses, balances, `totalIssued`, active `totalSupply`, manifest count, and cap are
+      reconciled
 - [ ] No incident or unexplained discrepancy remains
 - [ ] At least 24 hours elapsed after the final normal batch
 - [ ] EOA address, chain, balance, nonce, and activity are rechecked
-- [ ] Finalization target, value, calldata, nonce, simulation, and expected final supply are decoded
+- [ ] Finalization target, value, calldata, nonce, simulation, expected `finalIssued`, and current active `totalSupply`
+      are decoded
 - [ ] Independent reviewer approved the final reconciliation
 - [ ] Human maintainers approved irreversible finalization
 - [ ] Project owner manually signed the finalization transaction
@@ -251,8 +282,8 @@ Emergency finalization may be considered during credible key compromise, manifes
 - [ ] Project owner retains legitimate control and manually signs
 - [ ] Confirmation and finalization event are recorded
 - [ ] Further distribution is confirmed impossible
-- [ ] Existing balances remain unchanged
-- [ ] Supply shortfall is documented
+- [ ] Finalization itself leaves statuses and both counters unchanged; later valid holder burns remain possible
+- [ ] Issuance shortfall relative to the cap is documented separately from any holder burns
 - [ ] Required public correction or warning is issued
 
 Emergency finalization cannot recover a lost key, reverse prior issuance, or guarantee recovery after full compromise.
@@ -261,16 +292,17 @@ Emergency finalization cannot recover a lost key, reverse prior issuance, or gua
 
 - [ ] Network, chain ID, contract address, deployment transaction, block, timestamp, and deployer recorded
 - [ ] Source commit, compiler settings, constructor data, creation hash, and runtime hash recorded
-- [ ] Name, symbol, decimals, initial supply, authority, cap, and maximum batch size rechecked
+- [ ] Name, symbol, decimals, initial `totalIssued`, initial supply, authority, cap, and maximum batch size rechecked
 - [ ] Dedicated EOA checksummed address and non-secret control evidence recorded
 - [ ] Source-verification status and link recorded
 - [ ] Etherscan submission, response, displayed-field, and correction records are preserved
 - [ ] Every manifest, checksum, calldata, transaction, event set, and reconciliation report recorded
-- [ ] Final supply reconciled with manifest and cap
-- [ ] Any shortfall has a written explanation
-- [ ] Finalization transaction, event, state, final supply, and observation period recorded
-- [ ] Distribution, transfer, transfer-from, approval, and repeated finalization remain unavailable
-- [ ] Existing balances remain preserved
+- [ ] Final `totalIssued` reconciled with issued manifests and the cap
+- [ ] Active `totalSupply`, burned-address count, and representative `wasAlerted` reads are recorded separately
+- [ ] Any issuance shortfall has a written explanation distinct from holder burns
+- [ ] Finalization transaction, event, state, final issued count, active supply, and observation period recorded
+- [ ] Distribution, transfer, transfer-from, approval, delegated burn, and repeated finalization remain unavailable
+- [ ] Valid holder self-burn remains available and cannot change `totalIssued` or restore cap headroom
 - [ ] Canonical official page and public verification material are independently rechecked
 - [ ] No private key or wallet secret was accessed by an agent
 - [ ] No transaction was signed, submitted, or broadcast by an agent

@@ -1,6 +1,7 @@
 # Project documentation
 
-Current status: foundation, product specification, threat model, and acceptance criteria are complete. Minimal contract implementation is next.
+Current status: foundation and the V2 product specification, threat model, and acceptance criteria are complete. V2
+contract implementation and validation are in progress.
 
 | Document | Responsibility |
 | --- | --- |

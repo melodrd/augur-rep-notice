@@ -1,18 +1,27 @@
-# REP MIGRATION ALERT Messaging
+# CHECK AUGUR REP MIGRATION Messaging
 
-Status: Approved for implementation
+Status: Approved for V2 implementation
 
 This document defines the required public meaning, safety language, publication hierarchy, and correction rules. It does not authorize publication or deployment.
 
 ## Canonical core message
 
-> REP MIGRATION ALERT is a non-economic on-chain alert related to Augur REP migration. It is not REP, migrated REP, replacement REP, a claim, or an asset with value. Receiving it does not migrate REP and requires no interaction with the token. Do not approve, transfer, swap, burn, bridge, claim, sign, or connect a wallet because of it. CHECKREP means to check official REP migration information independently through the official Augur website. Verify the canonical contract address through official Augur sources.
+> CHECK AUGUR REP MIGRATION is a non-economic on-chain alert directing recipients to independently check official
+> Augur REP migration information. It is not REP, migrated REP, replacement REP, a claim, or an asset with value.
+> Receiving it does not migrate REP and requires no action. MIGRATEREP refers to the migration subject; it is not REP
+> and is not an instruction to perform migration. Hiding the alert through wallet controls is acceptable where
+> available. An active holder may optionally self-burn only their own unit directly through the verified canonical
+> contract, but burning is not required and provides no migration or economic benefit. Never use a third-party burn
+> website, approval, swap, claim page, signature request, or wallet-connect flow. Verify the exact canonical contract
+> address through official Augur sources before any optional direct interaction.
 
 Safety-critical statements must remain intact across official surfaces. Short posts may point to the canonical message but must not weaken its meaning.
 
 ## Meaning of receipt
 
-Receiving one unit means only that the address was included in a reviewed campaign recipient set and the authority successfully issued one alert to it.
+Receiving one unit means only that the address was included in a reviewed campaign recipient set and the authority
+successfully issued one alert to it. `wasAlerted(address)` permanently records that issuance even if the holder later
+self-burns and the active balance becomes zero.
 
 Receipt does not prove:
 
@@ -26,17 +35,23 @@ Receipt does not prove:
 
 The alert performs no migration and grants no rights or entitlement.
 
-## Meaning of CHECKREP
+An active balance may be hidden through wallet controls where available. Optional self-burn changes the active balance
+from one to zero, but it cannot remove transaction history, issuance or burn events, permanent receipt history, or
+third-party cached records. Nobody can burn another recipient's alert.
+
+## Meaning of MIGRATEREP
 
 ```text
-CHECKREP means:
-Check official REP migration information.
+MIGRATEREP refers to:
+The subject of Augur REP migration.
 
-CHECKREP does not mean:
-Approve, transfer, swap, burn, claim, sign, or connect a wallet.
+MIGRATEREP is not:
+REP, migrated REP, replacement REP, a claim, or an instruction to perform migration.
 ```
 
-Official wording must pair the symbol with an instruction to check official Augur information independently. It must never treat the symbol as a replacement REP denomination or an instruction to interact with the alert.
+Official wording must pair the symbol with an instruction to check official Augur information independently. It must
+never treat the symbol as a replacement REP denomination, a migration mechanism, or an instruction to use a website or
+wallet-connect flow.
 
 ## Required statements
 
@@ -46,7 +61,17 @@ Official material must:
 - state that it is not REP, migrated REP, replacement REP, a claim, reward, redemption instrument, governance asset, or asset with value;
 - state that receipt performs no migration and grants no right;
 - state that no recipient interaction is required;
-- tell users not to approve, transfer, swap, burn, bridge, claim, deposit, sign, or connect a wallet because of it;
+- state that hiding the alert through wallet controls is acceptable where available;
+- state that an active holder may optionally self-burn only their own unit directly through the verified canonical
+  contract;
+- state that burning is not required, is not a migration step, and provides no migration or economic benefit;
+- state that burning reduces only the active balance and cannot erase transaction history, events, permanent receipt
+  history, or third-party cached records;
+- state that nobody can burn another recipient's alert;
+- tell users not to approve, transfer, swap, bridge, claim, deposit, sign, use a third-party burn site, or connect a
+  wallet because of it;
+- require verification of the exact canonical contract address through official Augur sources before any optional
+  direct self-burn;
 - tell users to navigate independently to the official Augur website;
 - identify the verified checksummed contract address as the only canonical on-chain identity;
 - warn that fraudulent deployments can copy metadata, ABI, source, and branding;
@@ -57,7 +82,10 @@ Official material must:
 Official material must not:
 
 - suggest that the alert itself migrates REP;
-- imply that holding, buying, selling, transferring, approving, burning, or claiming it has a benefit;
+- imply that holding, buying, selling, transferring, approving, burning, or claiming it has a migration or economic
+  benefit;
+- frame self-burn as required, recommended, or part of the normal REP migration process;
+- direct users to a third-party burn website, signature flow, approval flow, or wallet-connect flow;
 - present it as a claim, redemption, recovery, bridge, staking, governance, or wallet-connect mechanism;
 - instruct users to trust a wallet, explorer, search result, direct message, copied deployment, or shortened link;
 - treat matching metadata, verified source, ABI shape, a price, or liquidity as authentication;
@@ -108,7 +136,8 @@ When an address, chain, link, description, or safety statement is wrong or suspe
 3. Correct or temporarily replace the canonical page with a clear warning.
 4. Propagate the correction to every official channel.
 5. Preserve the incorrect material and correction timeline.
-6. Never tell users to interact with the alert as a remedy.
+6. Never present self-burn as a remedy for a fake address, compromised publication, erroneous issuance, or other
+   incident; it cannot erase history or correct official records.
 7. Resume only after independent verification and human approval.
 
 Communications cannot reverse issued alerts. Authority compromise, manifest misuse, or unexpected issuance also activates the deployment runbook’s incident procedure.

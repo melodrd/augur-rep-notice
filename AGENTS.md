@@ -27,9 +27,9 @@ Stop before changing code when a request conflicts with a security invariant or 
 Status:
 
 - Foundation: complete.
-- Product specification: complete.
-- Threat model and acceptance criteria: complete.
-- Minimal contract implementation: next.
+- V2 product specification: complete.
+- V2 threat model and acceptance criteria: complete.
+- V2 contract implementation and validation: next.
 
 Default mode:
 
@@ -48,8 +48,8 @@ A passing build is not evidence that the system is safe, audited, useful, or rea
 
 The product specification is authoritative. Keep these high-level constraints aligned with it:
 
-- Fixed name: `REP MIGRATION ALERT`.
-- Fixed symbol: `CHECKREP`.
+- Fixed name: `CHECK AUGUR REP MIGRATION`.
+- Fixed symbol: `MIGRATEREP`.
 - Decimals: `0`.
 - Unit per successful recipient: `1`.
 - Initial supply: `0`.
@@ -63,8 +63,14 @@ The product specification is authoritative. Keep these high-level constraints al
 - The same EOA is expected to deploy and be supplied explicitly as authority.
 - Deployment alone grants no privilege.
 - Authority transfer, recovery, successor nomination, ownership, and secondary roles are absent.
-- Transfers, transfer-from, approvals, permits, allowance helpers, operator approvals, and burns are disabled or absent.
+- Transfers, transfer-from, approvals, permits, allowance helpers, operator approvals, and delegated or
+  authority-controlled burns are disabled or absent.
+- One holder-only `burn()` path lets an active holder remove only their own unit.
+- `totalIssued` permanently counts unique addresses ever alerted, while `totalSupply` counts active, unburned units.
+- `wasAlerted(address)` permanently distinguishes never-alerted addresses from addresses that later self-burned.
+- The immutable cap applies to `totalIssued`; burning never restores issuance capacity.
 - Finalization is explicit, irreversible, and permanently closes issuance.
+- Holder self-burn remains available after finalization.
 - No proxy, upgrade, external call, REP interaction, migration-contract interaction, payable path, withdrawal, or recovery helper exists.
 - The production contract is standalone and does not inherit generalized token or administration frameworks.
 
@@ -235,11 +241,11 @@ The distribution path must:
 
 - reject empty arrays;
 - reject the zero address;
-- reject duplicates within a call and prior recipients;
+- reject duplicates within a call and all prior recipients, including recipients that self-burned;
 - revert the complete call for any invalid condition;
 - prevent balances above one;
 - reject unauthorized and post-finalization calls;
-- enforce the immutable cap;
+- enforce the immutable cap against `totalIssued`;
 - emit one `Transfer(address(0), recipient, 1)` per success;
 - avoid external calls and stored-set iteration.
 
@@ -249,9 +255,14 @@ Do not freeze a maximum batch size until measured gas and calldata evidence supp
 
 - Transfer and transfer-from always revert, including zero-value transfer.
 - Approval always reverts and allowance is always zero.
-- Permit, allowance helpers, operator approvals, callbacks, and burns are absent.
+- Permit, allowance helpers, operator approvals, callbacks, authority burn, delegated burn, and `burnFrom` are absent.
+- An active holder may call `burn()` once to change only their own status from active to burned.
+- A successful burn decreases `totalSupply` by one, leaves `totalIssued` unchanged, preserves `wasAlerted`, and emits
+  `Transfer(holder, address(0), 1)`.
+- A never-alerted or already-burned caller cannot burn.
 - Finalization is authorized, explicit, irreversible, and repeated calls revert.
 - No path can restore issuance after finalization.
+- Finalization does not disable valid holder self-burn.
 
 ## 9. Security invariants
 
@@ -259,11 +270,15 @@ Tests and reviews must establish:
 
 - no address balance exceeds one;
 - zero address balance remains zero;
-- balances cannot move or burn;
-- total supply equals unique successful recipients;
+- balances cannot move and only an active holder can burn their own unit;
+- `wasAlerted` is permanent and false only for never-alerted addresses;
+- burned addresses remain permanently ineligible for reissuance;
+- `totalIssued` equals unique successful recipients and only increases;
+- `totalSupply` equals active, unburned units;
+- `totalSupply <= totalIssued <= distributionCap`;
 - failed calls do not change state;
-- total supply never exceeds the cap;
 - only the immutable authority distributes or finalizes;
+- no authority, deployer, outsider, operator, or approved spender can burn another account;
 - no deployer, owner, role, recovery, or secondary privilege exists;
 - authority loss creates no replacement administrator;
 - authority compromise cannot bypass the cap;
@@ -329,7 +344,8 @@ Do not silently drop records.
 
 Produce machine-readable JSON, reviewable CSV, summary reports, checksums, batch manifests, and reconciliation reports.
 
-Final batch manifests record batch number, recipient count, first and last canonical address, input checksum, batch checksum, expected cumulative recipient count, and expected cumulative supply.
+Final batch manifests record batch number, recipient count, first and last canonical address, input checksum, batch
+checksum, expected cumulative `totalIssued`, and separately reconciled active `totalSupply`.
 
 Never edit generated production manifests manually.
 
@@ -402,7 +418,7 @@ For each deployment environment, record:
 - creation and runtime bytecode hashes;
 - source-verification status;
 - deployment block and timestamp;
-- metadata reads;
+- metadata, `totalIssued`, `totalSupply`, and representative `wasAlerted` reads;
 - finalization state;
 - relevant transaction hashes.
 
@@ -412,7 +428,8 @@ Post-deployment checks compare chain, bytecode, metadata, supply, authority, cap
 
 Consider at least:
 
-- unauthorized issuance, cap bypass, accidental transferability, approvals, duplicates, supply errors, finalization bypass, external calls, and upgrade paths;
+- unauthorized issuance, cap bypass, accidental transferability, approvals, duplicates, unauthorized or delegated burn,
+  burn-accounting errors, reissuance after burn, supply errors, finalization bypass, external calls, and upgrade paths;
 - EOA key loss, compromise, malware, wrong-chain signing, bad calldata, nonce errors, excessive funding, unrelated activity, unsafe backup, and unrecoverable authority;
 - wrong source contracts, snapshot, discovery, migration classification, exclusions, ordering, checksums, or manifest count;
 - wrong network, constructor values, bytecode, batch, nonce, replacement, reconciliation, or finalization timing;
@@ -424,12 +441,18 @@ Update the threat model when implementation or operations introduce a new risk.
 
 Documentation must consistently state:
 
-- `REP MIGRATION ALERT` is an alert only;
+- `CHECK AUGUR REP MIGRATION` is an alert only;
 - it is not REP, migrated REP, replacement REP, a claim, or an asset with value;
 - receiving it performs no migration and grants no right;
 - no recipient interaction is required;
-- `CHECKREP` means to check official REP migration information independently;
-- users should not approve, transfer, swap, burn, bridge, claim, sign, or connect a wallet because of it;
+- `MIGRATEREP` refers to the migration subject and is not REP or an instruction to perform migration;
+- hiding the alert through wallet controls is acceptable where available;
+- an active holder may optionally self-burn directly through the verified canonical contract;
+- burning is not required, provides no migration or economic benefit, and cannot erase transaction history, events, or
+  third-party cached records;
+- users should not approve, transfer, swap, bridge, claim, sign, use a third-party burn site, or connect a wallet
+  because of it;
+- nobody can burn another recipient's alert;
 - the canonical contract address must be verified through official Augur sources;
 - identical metadata and third-party prices do not prove authenticity or value;
 - third-party display is not guaranteed.
@@ -512,7 +535,8 @@ Never:
 - deploy to mainnet;
 - sign, submit, or broadcast production transactions;
 - relax invariants or suppress warnings without approval;
-- add hidden authority, upgradeability, arbitrary calls, transferability, economic use, claims, approvals, or burns;
+- add hidden authority, upgradeability, arbitrary calls, transferability, economic use, claims, approvals, authority
+  burn, delegated burn, `burnFrom`, or any destruction path beyond the approved holder-only `burn()`;
 - infer wallet or explorer display without evidence.
 
 ## 19. Definition of done

@@ -3,9 +3,9 @@
 ## Project status
 
 - Foundation: complete
-- Product specification: complete after the 2026-07-16 revision
-- Threat model and acceptance criteria: complete after the 2026-07-16 revision
-- Minimal contract implementation: in progress
+- V2 product specification: complete after the 2026-07-16 metadata and self-burn revision
+- V2 threat model and acceptance criteria: complete after the 2026-07-16 revision
+- V2 contract implementation and validation: in progress
 
 ## 1. Foundation and reproducibility
 
@@ -21,7 +21,8 @@ Status: Complete
 
 Entry condition: Foundation complete.
 
-Exit condition: Purpose, metadata, authority, distribution, cap, finalization, interface, communications meaning, and deferred evidence gates are approved.
+Exit condition: Purpose, V2 metadata, permanent alert history, holder-only self-burn, authority, distribution, cap,
+finalization, interface, communications meaning, and deferred evidence gates are approved.
 
 ## 3. Threat model and acceptance criteria
 
@@ -29,7 +30,8 @@ Status: Complete
 
 Entry condition: Product specification approved.
 
-Exit condition: Threats, accepted trade-offs, release controls, invariants, and frozen implementation acceptance criteria are approved.
+Exit condition: Threats, accepted trade-offs, release controls, V2 accounting and burn invariants, and frozen
+implementation acceptance criteria are approved.
 
 ## 4. Minimal contract implementation
 
@@ -37,7 +39,7 @@ Status: In progress
 
 Entry condition: Specification, decisions, threat model, and acceptance criteria are committed consistently.
 
-Exit condition: One minimal contract matches the specification and compiles without unresolved warnings.
+Exit condition: One minimal V2 contract matches the specification and compiles without unresolved warnings.
 
 ## 5. Unit, fuzz, invariant, gas, and static-analysis work
 
@@ -47,9 +49,9 @@ Entry condition: Minimal contract candidate exists.
 
 Exit condition: Required tests and measurements pass; warnings and findings are resolved or explicitly accepted.
 
-Core contract candidate implemented and validated; maximum batch enforcement remains blocked on the approved gas-limit
-input. Unit, fuzz, invariant, gas, coverage, ABI, storage-layout, and static-analysis evidence is recorded in the
-[contract validation report](../reports/CONTRACT_VALIDATION_REPORT.md).
+The prior V1 candidate and its validation report are superseded historical evidence. V2 unit, fuzz, invariant, gas,
+coverage, ABI, storage-layout, and static-analysis evidence must be rerun and recorded before this phase completes.
+Maximum batch enforcement remains blocked on an approved target-chain gas-limit input and V2 measurements.
 
 ## 6. Snapshot and recipient tooling
 
@@ -105,7 +107,9 @@ Status: Not started
 
 Entry condition: Approved rollout is complete or an incident requires closure.
 
-Exit condition: Final supply is reconciled, finalization is confirmed irreversible, and official Augur and Etherscan verification records are complete.
+Exit condition: Final lifetime issuance and current active supply are separately reconciled, issuance finalization is
+confirmed irreversible, valid holder self-burn remains available, and official Augur and Etherscan verification records
+are complete.
 
 No phase authorizes an agent to access a private key, sign, submit, or broadcast.
 
