@@ -21,7 +21,7 @@ Receiving the alert:
 - does not prove that a human controls the address or saw the alert.
 
 The canonical public wording and publication rules are maintained in
-[`docs/communications/NOTICE_MESSAGING.md`](../communications/NOTICE_MESSAGING.md).
+[`docs/communications/MESSAGING.md`](../communications/MESSAGING.md).
 
 ## 2. Metadata
 
@@ -56,6 +56,15 @@ Approve, transfer, swap, burn, claim, sign, or connect a wallet.
 Name, symbol, and decimals are compiled into the contract. They are not constructor parameters and cannot change after deployment. A metadata change requires a new reviewed candidate and deployment.
 
 The deployed contract address, verified through official Augur sources, is the only canonical on-chain identity. Matching metadata, source, ABI, logos, price data, or liquidity does not prove authenticity.
+
+### 2.4 Current third-party scope
+
+Etherscan is the only third-party metadata surface currently in scope. Source verification and metadata operations follow the
+[Etherscan runbook](../operations/ETHERSCAN_RUNBOOK.md).
+
+Browser and mobile wallets, portfolio trackers, token lists, CoinGecko, CoinMarketCap, and other market-data or asset-listing services are deferred for a later specification and operations review. No wallet-product matrix or submission to those services is currently approved, and no current release gate depends on their inclusion.
+
+The project does not claim that wallets will automatically display the alert.
 
 ## 3. Contract architecture
 

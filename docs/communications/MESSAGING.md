@@ -88,6 +88,17 @@ Publication order:
 
 Screenshots, reposts, direct messages, community summaries, search results, wallets, token lists, and third-party interfaces are not canonical sources.
 
+## Current third-party scope
+
+Etherscan is the only third-party metadata surface currently in scope. Source verification, metadata, logo, evidence, and correction work follows the
+[Etherscan runbook](../operations/ETHERSCAN_RUNBOOK.md).
+
+Etherscan approval, display, and review timing are not guaranteed. The official Augur website and verified checksummed contract address remain canonical.
+
+Browser and mobile wallets, portfolio trackers, token lists, CoinGecko, CoinMarketCap, and other market-data or asset-listing services are deferred for a later specification and operations review. No wallet-product matrix or submission to those services is currently approved, and no current release gate depends on their inclusion.
+
+No claim is made that wallets will automatically display the alert.
+
 ## Corrections and incidents
 
 When an address, chain, link, description, or safety statement is wrong or suspected to be compromised:

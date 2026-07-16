@@ -157,9 +157,9 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] Rehearsal findings are independently reviewed
 - [ ] Candidate changes after rehearsal require a new rehearsal
 
-## 11. Communications gate
+## 11. Communications and Etherscan gate
 
-- [ ] Canonical alert language in [`docs/communications/NOTICE_MESSAGING.md`](../communications/NOTICE_MESSAGING.md) is approved
+- [ ] Canonical alert language in [`docs/communications/MESSAGING.md`](../communications/MESSAGING.md) is approved
 - [ ] Exact official Augur page URL is approved
 - [ ] Official page states chain, verified address, source-verification link, alert meaning, safety warning, and migration information
 - [ ] Contract address is published only after independent chain, address, bytecode, and source checks
@@ -167,6 +167,11 @@ The production authority is one dedicated EOA controlled by the project owner. T
 - [ ] Communications explain `CHECKREP` as checking official information independently
 - [ ] Communications warn that copied metadata, price, liquidity, and third-party display do not establish authenticity or value
 - [ ] Correction and incident owners are assigned
+- [ ] Etherscan work follows [`ETHERSCAN_RUNBOOK.md`](ETHERSCAN_RUNBOOK.md)
+- [ ] Exact current Etherscan instructions are reviewed after deployment
+- [ ] Source, ABI, metadata, website, description, logo, submission, response, and correction evidence is recorded as applicable
+- [ ] No Etherscan approval or display guarantee is made
+- [ ] No current gate requires browser-wallet, mobile-wallet, portfolio-tracker, token-list, CoinGecko, CoinMarketCap, or other market-data inclusion
 
 ## 12. Pre-deployment simulation
 
@@ -259,6 +264,7 @@ Emergency finalization cannot recover a lost key, reverse prior issuance, or gua
 - [ ] Name, symbol, decimals, initial supply, authority, cap, and maximum batch size rechecked
 - [ ] Dedicated EOA checksummed address and non-secret control evidence recorded
 - [ ] Source-verification status and link recorded
+- [ ] Etherscan submission, response, displayed-field, and correction records are preserved
 - [ ] Every manifest, checksum, calldata, transaction, event set, and reconciliation report recorded
 - [ ] Final supply reconciled with manifest and cap
 - [ ] Any shortfall has a written explanation

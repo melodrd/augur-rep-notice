@@ -146,15 +146,15 @@ Preserve the documented structure unless a reviewed change justifies another lay
 ├── docs/
 │   ├── README.md
 │   ├── product/
-│   │   └── SPEC.md
-│   ├── architecture/
-│   │   └── DECISION_RECORD.md
+│   │   ├── SPEC.md
+│   │   └── DECISIONS.md
 │   ├── security/
 │   │   └── THREAT_MODEL.md
 │   ├── operations/
-│   │   └── DEPLOYMENT_RUNBOOK.md
+│   │   ├── DEPLOYMENT_RUNBOOK.md
+│   │   └── ETHERSCAN_RUNBOOK.md
 │   ├── communications/
-│   │   └── NOTICE_MESSAGING.md
+│   │   └── MESSAGING.md
 │   ├── planning/
 │   │   └── ROADMAP.md
 │   └── reports/
@@ -435,6 +435,12 @@ Documentation must consistently state:
 - third-party display is not guaranteed.
 
 Do not place a migration URL in contract metadata or storage.
+
+Etherscan is the only third-party metadata surface currently in scope. Follow
+[`docs/operations/ETHERSCAN_RUNBOOK.md`](docs/operations/ETHERSCAN_RUNBOOK.md)
+for source verification, metadata, logo, evidence, and correction work.
+
+Browser and mobile wallets, portfolio trackers, token lists, CoinGecko, CoinMarketCap, and other market-data or asset-listing services are deferred for a later specification and operations review. No wallet-product matrix or submission to those services is currently approved, and no release gate depends on their inclusion.
 
 ## 16. Git and change management
 

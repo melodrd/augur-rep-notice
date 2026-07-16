@@ -121,6 +121,8 @@ Off-chain systems and humans remain responsible for recipient correctness, unsig
 
 ## 8. Communications and third-party risks
 
+Etherscan is the only third-party metadata surface currently in scope. Other wallet, tracker, token-list, and market-data work is deferred and does not block a current release gate.
+
 | Threat | Consequence | Mitigation | Remaining risk | Release control |
 | --- | --- | --- | --- | --- |
 | Holders mistake the alert for REP, replacement REP, or a claim | Unsafe interaction or economic confusion | Canonical non-economic wording and no-interaction instructions | Metadata alone cannot convey the full message | Independent communications review |

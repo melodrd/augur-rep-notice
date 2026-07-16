@@ -1,35 +1,31 @@
 # REP MIGRATION ALERT
 
-This repository contains the foundation for an experimental, non-economic on-chain alert intended to help selected REP-holder addresses discover official migration information. The alert performs no migration and requires no recipient interaction.
+This repository defines and will implement a minimal, non-economic on-chain alert related to Augur REP migration. The alert performs no migration, grants no rights or value, and requires no recipient interaction.
 
 ## Status
 
-Repository foundation, product specification, threat model, and acceptance criteria are complete after the 2026-07-16 revision. Minimal contract implementation is next and has not started.
+- Foundation: complete
+- Product specification: complete
+- Threat model and acceptance criteria: complete
+- Minimal contract implementation: next
 
-**No production Solidity contract, deployment script, recipient-selection logic, wallet, key, or RPC configuration exists.**
+No production Solidity contract, recipient tooling, deployment script, wallet, key, or RPC configuration exists.
 
-Start with the [documentation index](docs/README.md), the approved [product specification](docs/product/SPEC.md), and the [architecture decision record](docs/architecture/DECISION_RECORD.md).
+## Documentation
 
-## Toolchain
+- [Documentation index](docs/README.md)
+- [Product specification](docs/product/SPEC.md)
+- [Architecture decisions](docs/product/DECISIONS.md)
+- [Threat model](docs/security/THREAT_MODEL.md)
+- [Deployment runbook](docs/operations/DEPLOYMENT_RUNBOOK.md)
+- [Etherscan runbook](docs/operations/ETHERSCAN_RUNBOOK.md)
+- [Messaging policy](docs/communications/MESSAGING.md)
+- [Roadmap](docs/planning/ROADMAP.md)
 
-- Foundry with Solidity `0.8.36`
-- Bun `1.3.14` for package management, TypeScript execution, and tests
-- TypeScript with `tsc --noEmit`
-- Biome for TypeScript formatting and linting
-- Slither managed as a Python CLI with `uv`
-
-OpenZeppelin Contracts and `forge-std` are pinned dependencies. The approved production contract architecture is standalone and must not inherit OpenZeppelin token, ownership, access-control, proxy, or upgradeable contracts. An unused OpenZeppelin dependency will be removed later through a separate reviewed dependency change.
-
-## Standard checks
+Run the local validation suite with:
 
 ```bash
-make fmt-check
-make build
-make test
-make coverage
-make audit
-make ops-check
 make check
 ```
 
-All current checks are local and require no public Ethereum RPC. Deployment and transaction broadcast are outside the current milestone.
+Documentation approval does not authorize RPC access, wallet operations, deployment, signing, submission, or broadcast.

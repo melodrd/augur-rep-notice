@@ -2,7 +2,7 @@
 
 Status: Approved for implementation
 
-This document records the main design choices and trade-offs. Contract behavior is authoritative in the [product specification](../product/SPEC.md).
+This document records the main design choices and trade-offs. Contract behavior is authoritative in the [product specification](SPEC.md).
 
 | Decision | Reason | Rejected alternative | Main trade-off |
 | --- | --- | --- | --- |
@@ -24,6 +24,7 @@ This document records the main design choices and trade-offs. Contract behavior 
 | Finalization is explicit and irreversible | Provides one auditable shutdown state | Automatic finalization, unfinalize, emergency mint, or upgrade | Premature finalization cannot be repaired; key loss may prevent finalization |
 | Standard issuance events and one finalization event are used | Supports indexing and deterministic reconciliation with minimal event surface | Duplicate custom recipient events or operator-supplied on-chain manifest hashes | Operations must keep disciplined external manifest records |
 | The contract makes no external calls and has no intended ETH path | Avoids custody, dependency, reentrancy, recovery, and migration-integration risk | On-chain eligibility checks, REP calls, arbitrary executors, or withdrawal helpers | Exceptionally forced ETH is permanently unrecoverable |
+| Etherscan is the only current third-party metadata surface | Provides one focused source-verification and metadata workflow without assuming broad interface support | Mandatory wallet matrices, tracker submissions, token-list work, or market-data listings in the current phase | Etherscan controls its display and review; broader visibility remains unknown |
 | Independent review remains required | Self-review is insufficient for code, data, unsigned artifacts, and communications | Author-only approval or calling informal review an audit | Review adds time and does not prove absence of defects |
 
 ## Accepted authority risks
@@ -37,3 +38,5 @@ This document records the main design choices and trade-offs. Contract behavior 
 Changes to metadata, authority, cap derivation, distribution, movement, approvals, burn, finalization, external interaction, upgradeability, or the alert’s public meaning require a specification revision before implementation.
 
 This architecture has not received an independent security audit.
+
+Browser and mobile wallets, portfolio trackers, token lists, CoinGecko, CoinMarketCap, and other market-data or asset-listing services are deferred for a later specification and operations review.

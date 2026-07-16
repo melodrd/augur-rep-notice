@@ -63,13 +63,13 @@ Entry condition: Contract and recipient tooling pass local review; snapshot bloc
 
 Exit condition: Pinned-fork state, gas, distribution, reconciliation, and finalization results are reviewed.
 
-## 8. Sepolia rehearsal
+## 8. Sepolia verification
 
 Status: Not started
 
 Entry condition: Explicit human authorization and all prior local gates complete.
 
-Exit condition: Candidate deployment, source verification, dedicated Sepolia EOA operation, distribution, failure cases, reconciliation, and finalization are reviewed.
+Exit condition: Candidate deployment, Etherscan source verification, dedicated Sepolia EOA operation, distribution, failure cases, reconciliation, and finalization are reviewed.
 
 ## 9. Independent review and candidate freeze
 
@@ -101,6 +101,8 @@ Status: Not started
 
 Entry condition: Approved rollout is complete or an incident requires closure.
 
-Exit condition: Final supply is reconciled, finalization is confirmed irreversible, and public verification records are complete.
+Exit condition: Final supply is reconciled, finalization is confirmed irreversible, and official Augur and Etherscan verification records are complete.
 
 No phase authorizes an agent to access a private key, sign, submit, or broadcast.
+
+Broader browser-wallet, mobile-wallet, portfolio-tracker, token-list, CoinGecko, CoinMarketCap, and market-data work is deferred for a later specification and operations review. It is not a current release gate.

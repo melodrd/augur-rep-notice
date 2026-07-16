@@ -1,22 +1,21 @@
 # Project documentation
 
-This directory contains the current product, security, planning, operational, and historical documentation for the `REP MIGRATION ALERT` experiment.
+Current status: foundation, product specification, threat model, and acceptance criteria are complete. Minimal contract implementation is next.
 
-| Document | Purpose | Status |
-| --- | --- | --- |
-| [Product specification](product/SPEC.md) | Defines approved product and contract behavior | Approved for implementation planning |
-| [Architecture decision record](architecture/DECISION_RECORD.md) | Summarizes approved architecture, rationale, trade-offs, and gates | Approved |
-| [Notice messaging](communications/NOTICE_MESSAGING.md) | Defines canonical notice-only language and publication controls | Approved core message; URL gated |
-| [Threat model](security/THREAT_MODEL.md) | Classifies contract, operational, data, and communications risks | Approved for implementation planning — not audited |
-| [Roadmap](planning/ROADMAP.md) | Defines gated project phases | Threat model and acceptance criteria complete; implementation next |
-| [Deployment runbook](operations/DEPLOYMENT_RUNBOOK.md) | Defines future deployment controls and checklists | Approved design-stage gates; non-operational |
-| [Toolchain report](reports/TOOLCHAIN_SETUP_REPORT.md) | Historical environment setup record | Historical |
-| [Foundation report](reports/FOUNDATION_SETUP_REPORT.md) | Historical repository-initialization record | Historical |
+| Document | Responsibility |
+| --- | --- |
+| [Product specification](product/SPEC.md) | Authoritative contract purpose, metadata, interface, state, authority, distribution, cap, finalization, invariants, and acceptance criteria |
+| [Product decisions](product/DECISIONS.md) | Major decisions, reasons, rejected alternatives, and trade-offs |
+| [Threat model](security/THREAT_MODEL.md) | Threats, consequences, mitigations, remaining risks, and release controls |
+| [Deployment runbook](operations/DEPLOYMENT_RUNBOOK.md) | Human-controlled deployment, distribution, reconciliation, and finalization checklists |
+| [Etherscan runbook](operations/ETHERSCAN_RUNBOOK.md) | Source verification, metadata, logo, evidence, and correction workflow |
+| [Messaging policy](communications/MESSAGING.md) | Canonical wording, approved meaning, prohibited claims, publication hierarchy, and incident messaging |
+| [Roadmap](planning/ROADMAP.md) | Project phases, status, entry conditions, and exit conditions |
+| [Foundation report](reports/FOUNDATION_SETUP_REPORT.md) | Historical repository-initialization record |
+| [Toolchain report](reports/TOOLCHAIN_SETUP_REPORT.md) | Historical environment-setup record |
 
-[`AGENTS.md`](../AGENTS.md) contains standing instructions for Codex and other coding agents. The root [`README.md`](../README.md) is the human-facing project introduction.
+[`AGENTS.md`](../AGENTS.md) contains workflow, technical restrictions, and repository rules. Historical reports are reference material; current policy lives in the active documents listed above.
 
-Reports under [`docs/reports/`](reports/) are historical records, not current operating policy. Current operating policy is defined by [`AGENTS.md`](../AGENTS.md), current configuration files, the approved specification and architecture record, and later approved release-gate documents.
+Etherscan is the only third-party metadata surface currently in scope. Broader wallet, tracker, token-list, and market-data work is deferred for a later specification and operations review.
 
-Bun is the repository's JavaScript package manager and TypeScript runtime. Foundry is the Solidity development framework. `uv` manages Python command-line tooling.
-
-No production contract currently exists. Documentation approval does not authorize RPC access, wallet operations, deployment, signing, Safe operation, or transaction broadcast.
+No documentation approval authorizes RPC access, wallet or key handling, deployment, signing, submission, or broadcast.
