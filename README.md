@@ -4,7 +4,7 @@ This repository contains the foundation for an experimental, non-economic on-cha
 
 ## Status
 
-Repository foundation and product architecture are complete. The design-stage threat model and acceptance criteria are the current phase; minimal contract implementation is next only after that gate is complete.
+Repository foundation, product architecture, design-stage threat model, and acceptance criteria are complete. Minimal contract implementation is the next phase and has not started.
 
 **No production Solidity contract, deployment script, recipient-selection logic, wallet, key, or RPC configuration exists.**
 

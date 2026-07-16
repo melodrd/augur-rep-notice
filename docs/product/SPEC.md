@@ -104,13 +104,15 @@ The contract is responsible only for:
 
 The operations pipeline owns:
 
-- **DEFERRED WITH GATE:** REP source scope and holder discovery;
-- **DEFERRED WITH GATE:** snapshot selection and verification;
-- **DEFERRED WITH GATE:** migration-status evaluation;
-- **DEFERRED WITH GATE:** thresholds and evidence-backed exclusions;
-- **DEFERRED WITH GATE:** recipient manifests, ordering, checksums, and batches;
-- **DEFERRED WITH GATE:** transaction preparation and reconciliation;
-- **DEFERRED WITH GATE:** rollout, stop conditions, and campaign measurement.
+- REP source scope and holder discovery;
+- snapshot selection and verification;
+- migration-status evaluation;
+- thresholds and evidence-backed exclusions;
+- recipient manifests, ordering, checksums, and batches;
+- transaction preparation and reconciliation;
+- rollout, stop conditions, and campaign measurement.
+
+Every evidence-dependent value for these responsibilities is **DEFERRED WITH GATE** under the complete owner, evidence, decision-rule, phase, and blocking-gate entries in Section 27.
 
 The contract must not determine recipient eligibility on-chain.
 
@@ -714,16 +716,146 @@ The exact canonical page URL is **DEFERRED WITH GATE** until the page exists. It
 - **CONFIRMED:** Decoded calldata and events must reconcile to approved manifests.
 - **CONFIRMED:** The exact manifest count equals the immutable cap.
 
-## 26. Acceptance-criteria handoff
+## 26. Frozen acceptance criteria
 
-**CONFIRMED:** Unit, fuzz, invariant, gas, coverage, static-analysis, independent-review, and empirical wallet tests are mandatory.
+Status: Frozen on 2026-07-16 for the future implementation
 
-Phase 3 must freeze the detailed acceptance criteria against this approved behavior before Phase 4 starts. That freeze may add test detail but may not reinterpret the architecture.
+These criteria are the required test and review contract for the implementation phase. They are not evidence that an implementation exists or has passed.
+
+### 26.1 Metadata
+
+The candidate must demonstrate:
+
+- exact name `Augur REP Migration Notice`;
+- exact symbol `REPNOTICE`;
+- decimals equal to zero;
+- initial supply equal to zero;
+- name, symbol, and decimals compiled into contract behavior rather than accepted as constructor metadata.
+
+### 26.2 Construction
+
+The candidate must demonstrate:
+
+- a nonzero immutable authority;
+- rejection of the zero authority;
+- a nonzero immutable distribution cap;
+- rejection of a zero cap;
+- no implicit deployer privilege;
+- no constructor issuance or deployer inventory;
+- immutable authority and cap values;
+- an initially unfinalized state.
+
+### 26.3 Distribution
+
+The candidate must demonstrate:
+
+- exactly one array-based issuance path;
+- successful one-recipient distribution;
+- successful ordinary multi-recipient distribution;
+- successful distribution to a valid contract address;
+- empty-array rejection;
+- zero-recipient complete-call rejection at every array position;
+- duplicate-within-array complete-call rejection;
+- previously-notified complete-call rejection;
+- unauthorized-caller rejection;
+- post-finalization rejection;
+- oversized-array rejection;
+- success at the maximum batch boundary;
+- rejection above the maximum batch boundary;
+- success exactly at the remaining cap;
+- atomic rejection above the cap;
+- repeated-submission rejection;
+- exact one-unit binary balances;
+- exact total-supply accounting;
+- no partial balance, supply, or persistent event on any failure.
+
+### 26.4 Interface
+
+The candidate must demonstrate:
+
+- positive-value `transfer` rejection;
+- zero-value `transfer` rejection;
+- `transferFrom` rejection;
+- `approve` rejection;
+- `allowance` always returning zero;
+- absence of permit;
+- absence of allowance-changing helpers;
+- absence of operator approvals;
+- absence of approval callbacks;
+- absence of holder burn, authority burn, and `burnFrom`.
+
+### 26.5 Authority
+
+The candidate must demonstrate:
+
+- immutable authority;
+- no owner or pending-owner state;
+- no ownership transfer, acceptance, or renunciation path;
+- no authority setter or successor nomination;
+- no secondary administrator, minter, operator, recovery, or finalizer role;
+- only the authority can distribute;
+- only the authority can finalize;
+- authority remains readable but powerless after finalization.
+
+### 26.6 Finalization
+
+The candidate must demonstrate:
+
+- successful authorized finalization;
+- unauthorized-finalization rejection;
+- repeated-finalization rejection;
+- permanent closure of every issuance path;
+- preservation of balances and supply;
+- accurate authority and final-supply event fields;
+- technically valid below-cap finalization;
+- reaching the cap does not automatically finalize;
+- no unfinalize, emergency mint, recovery distribution, or stored finalization timestamp requirement.
+
+### 26.7 Events and reads
+
+The candidate must demonstrate:
+
+- exactly one `Transfer(address(0), recipient, 1)` event per successful recipient;
+- no persistent issuance event from a reverted call;
+- no duplicate `NoticeDistributed` event;
+- exactly one `DistributionFinalized(authority, finalSupply)` event on successful finalization;
+- no on-chain batch identifier or manifest hash;
+- only the approved public reads: fixed metadata, total supply, balance, zero allowance, immutable authority, finalized state, immutable cap, and frozen maximum batch size.
+
+### 26.8 Architecture
+
+The candidate must demonstrate:
+
+- a standalone implementation;
+- no inheritance from OpenZeppelin ERC20, Ownable, Ownable2Step, AccessControl, Pausable, proxy, upgradeable, or generalized token frameworks;
+- no unexpected inherited or otherwise externally callable surface;
+- no REP or migration-contract interaction;
+- no arbitrary external call, callback, or hook;
+- no payable function, intended receive function, fallback function, ETH withdrawal, or recovery helper;
+- no proxy, upgrade, implementation indirection, or `delegatecall`;
+- no logic that depends on the contract's ETH balance.
+
+### 26.9 Required verification methods
+
+Before the Contract release gate advances:
+
+- unit tests must cover every approved behavior and boundary;
+- fuzz tests must cover arbitrary valid recipients, unauthorized callers, batch compositions, duplicate placement, zero placement, ordering, finalization timing, repeated finalization, and supply/balance properties;
+- invariant tests must exercise sequences of distribution, invalid calls, transfer attempts, approval attempts, cap boundaries, and finalization;
+- gas tests must cover batch sizes `1`, `10`, `25`, `50`, `100`, `200`, and `500` when feasible, plus the proposed maximum and required failure scenarios;
+- the maximum batch constant must satisfy the approved 50% block-gas decision rule or a lower Safe/tooling bound;
+- coverage must be recorded as a diagnostic;
+- compiler warnings and contract-size results must be reviewed;
+- Slither findings must be classified rather than silently suppressed;
+- creation and runtime bytecode must be reproduced independently;
+- at least one independent contract reviewer must review the source, configuration, bytecode, ABI, tests, gas report, and static-analysis results;
+- mandatory category-based Sepolia wallet testing must be completed before the Testnet gate advances.
 
 ## 27. Deferred-with-gate register
 
 | Parameter | Why it cannot responsibly be selected now | Owner role | Required evidence | Exact decision rule | Resolution phase | Gate blocked |
 | --- | --- | --- | --- | --- | --- | --- |
+| OpenZeppelin dependency cleanup | Import usage cannot be known until the standalone candidate exists | Contract implementer with independent contract reviewer | Candidate import graph, build configuration, dependency use review | If no approved production or test code imports OpenZeppelin, remove it in a separate reviewed `chore(deps)` commit; otherwise document the explicit approved use | Post-implementation dependency review | Candidate dependency freeze |
 | Exact REP contracts, versions, and universes | Requires approved campaign scope and primary-source verification | Operations/data maintainer | Checksummed addresses, chain evidence, version rationale, independent review | Include only explicitly approved REP sources whose identity and historical query behavior are verified | Snapshot/recipient design | Gate C: Data |
 | Snapshot block and hash | Must correspond to approved campaign timing and available reproducible historical state | Repository maintainer with operations/data maintainer | Chain ID, block number/hash/timestamp, archive-state availability, independent reproduction | Select one immutable block only after required historical queries reproduce from reviewed sources | Snapshot/recipient design | Gate C: Data |
 | Holder discovery and migration definition | Depends on approved REP scope and migration semantics | Operations/data maintainer | Method specification, fixtures, edge cases, independent review | Freeze only a deterministic method that classifies every input with an explicit outcome and fails closed on missing state | Snapshot/recipient design | Gate C: Data |
@@ -785,4 +917,4 @@ Approval covers:
 - communications rules;
 - deterministic deferred gates.
 
-Implementation may begin only after the design-stage threat model is approved and the acceptance criteria are frozen. This specification revision does not authorize code, RPC access, wallet operations, deployment, signing, or broadcast.
+The design-stage threat model is approved and these acceptance criteria are frozen, so minimal contract implementation is the next roadmap phase. This documentation task does not itself begin implementation or authorize RPC access, wallet operations, deployment, signing, or broadcast.

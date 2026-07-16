@@ -1,6 +1,6 @@
 # Roadmap
 
-Foundation, reproducibility, and product specification are complete. The design-stage threat model and acceptance criteria are in progress. Contract implementation has not started.
+Foundation, reproducibility, product specification, design-stage threat modeling, and acceptance-criteria definition are complete. Minimal contract implementation is next and has not started.
 
 ## 1. Foundation and reproducibility — Complete
 
@@ -17,19 +17,19 @@ Foundation, reproducibility, and product specification are complete. The design-
 - Exit status: Completed on 2026-07-16 through approval of [`docs/product/SPEC.md`](../product/SPEC.md), the [architecture decision record](../architecture/DECISION_RECORD.md), and [canonical notice messaging](../communications/NOTICE_MESSAGING.md). Evidence-dependent values are explicit gated parameters rather than unresolved contract behavior.
 - Non-goals: Contract implementation, tests, recipient extraction, RPC access, or deployment.
 
-## 3. Threat model and acceptance criteria — In progress
+## 3. Threat model and acceptance criteria — Complete
 
 - Objective: Review the approved behavior against abuse cases and convert it into accepted security and test gates.
 - Deliverables: Approved threat model, owned mitigations, invariants, and acceptance criteria.
 - Entry conditions: Product specification approved.
-- Exit conditions: Maintainers approve the design-stage threat model, classify accepted trade-offs, assign mitigation ownership, and freeze the complete future acceptance-test contract.
+- Exit status: Completed on 2026-07-16 through approval of the design-stage [threat model](../security/THREAT_MODEL.md), classification of accepted trade-offs, assignment of mitigation ownership, and the frozen acceptance criteria in the [product specification](../product/SPEC.md).
 - Non-goals: Claiming an audit or absence of vulnerabilities.
 
-## 4. Minimal contract implementation — Not started
+## 4. Minimal contract implementation — Next
 
 - Objective: Implement only the approved notice behavior.
 - Deliverables: One short production contract with approved immutable authorization, capped unique distribution, non-transferability, event, and finalization behavior.
-- Entry conditions: Phases 2 and 3 complete.
+- Entry conditions: The approved [product specification](../product/SPEC.md), approved design-stage [threat model](../security/THREAT_MODEL.md), frozen acceptance criteria, and [architecture decision record](../architecture/DECISION_RECORD.md) are committed consistently; Phases 2 and 3 are complete.
 - Exit conditions: Implementation matches the approved specification and compiles without unresolved warnings.
 - Non-goals: Snapshot tooling, deployment, upgradeability, callbacks, claims, or generalized frameworks.
 

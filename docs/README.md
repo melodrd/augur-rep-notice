@@ -7,9 +7,9 @@ This directory contains the current product, security, planning, operational, an
 | [Product specification](product/SPEC.md) | Defines approved product and contract behavior | Approved for implementation planning |
 | [Architecture decision record](architecture/DECISION_RECORD.md) | Summarizes approved architecture, rationale, trade-offs, and gates | Approved |
 | [Notice messaging](communications/NOTICE_MESSAGING.md) | Defines canonical notice-only language and publication controls | Approved core message; URL gated |
-| [Threat model](security/THREAT_MODEL.md) | Classifies contract, operational, data, and communications risks | Design-stage approval in progress |
-| [Roadmap](planning/ROADMAP.md) | Defines gated project phases | Product specification complete; threat model and acceptance criteria in progress |
-| [Deployment runbook](operations/DEPLOYMENT_RUNBOOK.md) | Defines future deployment controls and checklists | Non-operational planning document |
+| [Threat model](security/THREAT_MODEL.md) | Classifies contract, operational, data, and communications risks | Approved for implementation planning — not audited |
+| [Roadmap](planning/ROADMAP.md) | Defines gated project phases | Threat model and acceptance criteria complete; implementation next |
+| [Deployment runbook](operations/DEPLOYMENT_RUNBOOK.md) | Defines future deployment controls and checklists | Approved design-stage gates; non-operational |
 | [Toolchain report](reports/TOOLCHAIN_SETUP_REPORT.md) | Historical environment setup record | Historical |
 | [Foundation report](reports/FOUNDATION_SETUP_REPORT.md) | Historical repository-initialization record | Historical |
 
