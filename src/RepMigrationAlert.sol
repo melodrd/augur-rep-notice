@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.36;
 
-/// @title REP MIGRATION ALERT
-/// @notice Records one non-economic migration alert unit for each notified address.
-/// @dev Receiving an alert performs no migration, grants no right or value, and requires no interaction.
+/// @title CHECK AUGUR REP MIGRATION
+/// @notice Records one non-economic migration alert unit for each alerted address.
+/// @dev Receiving an alert performs no migration, grants no right or value, and requires no action.
 contract RepMigrationAlert {
-    string private constant _NAME = "REP MIGRATION ALERT";
-    string private constant _SYMBOL = "CHECKREP";
+    string private constant _NAME = "CHECK AUGUR REP MIGRATION";
+    string private constant _SYMBOL = "MIGRATEREP";
     uint8 private constant _DECIMALS = 0;
     uint256 private constant _UNIT = 1;
+
+    enum AlertStatus {
+        NeverAlerted,
+        Active,
+        Burned
+    }
 
     /// @notice Reverts when the constructor authority is the zero address.
     error ZeroAuthority();
@@ -30,14 +36,18 @@ contract RepMigrationAlert {
     /// @param index The zero-address recipient's calldata index.
     error ZeroRecipient(uint256 index);
 
-    /// @notice Reverts when a recipient already has an alert unit.
-    /// @param recipient The previously notified or duplicated recipient.
+    /// @notice Reverts when a recipient was previously alerted or duplicated in the current call.
+    /// @param recipient The previously alerted or duplicated recipient.
     error RecipientAlreadyNotified(address recipient);
 
     /// @notice Reverts when a distribution would exceed the immutable cap.
-    /// @param attemptedSupply The supply that the distribution would create.
+    /// @param attemptedIssued The lifetime issued count that the distribution would create.
     /// @param cap The immutable distribution cap.
-    error DistributionCapExceeded(uint256 attemptedSupply, uint256 cap);
+    error DistributionCapExceeded(uint256 attemptedIssued, uint256 cap);
+
+    /// @notice Reverts when the caller has no active alert unit to burn.
+    /// @param account The caller without an active alert balance.
+    error NoAlertBalance(address account);
 
     /// @notice Reverts for every attempted transfer or transfer-from.
     error TransferDisabled();
@@ -48,30 +58,32 @@ contract RepMigrationAlert {
     /// @notice Reverts when finalization has already completed.
     error FinalizationAlreadyCompleted();
 
-    /// @notice Emitted once for each successfully notified recipient.
+    /// @notice Emitted once for each successful issuance or holder self-burn.
     event Transfer(address indexed from, address indexed to, uint256 value);
 
     /// @notice Emitted when the authority permanently closes distribution.
-    event DistributionFinalized(address indexed authority, uint256 finalSupply);
+    event DistributionFinalized(address indexed authority, uint256 finalIssued);
 
     /// @notice The only address permitted to distribute or finalize.
     address public immutable authority;
 
-    /// @notice The maximum total number of alert units that may be issued.
+    /// @notice The maximum number of unique addresses that may ever be alerted.
     uint256 public immutable distributionCap;
 
-    /// @notice The number of unique successfully notified recipients.
+    /// @notice The number of unique addresses ever successfully alerted.
+    uint256 public totalIssued;
+
+    /// @notice The number of active, unburned alert units.
     uint256 public totalSupply;
 
     /// @notice Whether distribution has been permanently closed.
     bool public finalized;
 
-    /// @notice Returns an address's alert balance, which is always zero or one.
-    mapping(address account => uint256 balance) public balanceOf;
+    mapping(address account => AlertStatus status) private _status;
 
     /// @notice Creates an unfinalized alert contract with zero initial supply.
     /// @param authority_ The sole address permitted to distribute or finalize.
-    /// @param distributionCap_ The immutable maximum total supply.
+    /// @param distributionCap_ The immutable maximum lifetime issued count.
     constructor(address authority_, uint256 distributionCap_) {
         if (authority_ == address(0)) {
             revert ZeroAuthority();
@@ -99,13 +111,23 @@ contract RepMigrationAlert {
         return _DECIMALS;
     }
 
+    /// @notice Returns an address's active alert balance, which is always zero or one.
+    function balanceOf(address account) public view returns (uint256) {
+        return _status[account] == AlertStatus.Active ? _UNIT : 0;
+    }
+
+    /// @notice Returns whether an address was ever successfully alerted.
+    function wasAlerted(address account) external view returns (bool) {
+        return _status[account] != AlertStatus.NeverAlerted;
+    }
+
     /// @notice Returns zero because approvals are permanently disabled.
     function allowance(address, address) external pure returns (uint256) {
         return 0;
     }
 
     /// @notice Atomically issues one alert unit to each recipient.
-    /// @param recipients The ordered recipient addresses to notify.
+    /// @param recipients The ordered recipient addresses to alert.
     function distribute(address[] calldata recipients) external {
         if (msg.sender != authority) {
             revert UnauthorizedCaller(msg.sender);
@@ -119,9 +141,9 @@ contract RepMigrationAlert {
             revert EmptyRecipientArray();
         }
 
-        uint256 attemptedSupply = totalSupply + recipientCount;
-        if (attemptedSupply > distributionCap) {
-            revert DistributionCapExceeded(attemptedSupply, distributionCap);
+        uint256 attemptedIssued = totalIssued + recipientCount;
+        if (attemptedIssued > distributionCap) {
+            revert DistributionCapExceeded(attemptedIssued, distributionCap);
         }
 
         for (uint256 index = 0; index < recipientCount; index++) {
@@ -129,16 +151,29 @@ contract RepMigrationAlert {
             if (recipient == address(0)) {
                 revert ZeroRecipient(index);
             }
-            if (balanceOf[recipient] != 0) {
+            if (_status[recipient] != AlertStatus.NeverAlerted) {
                 revert RecipientAlreadyNotified(recipient);
             }
 
             // A later invalid entry reverts earlier writes and events, including in-call duplicates.
-            balanceOf[recipient] = _UNIT;
+            _status[recipient] = AlertStatus.Active;
             emit Transfer(address(0), recipient, _UNIT);
         }
 
-        totalSupply = attemptedSupply;
+        totalIssued = attemptedIssued;
+        totalSupply += recipientCount;
+    }
+
+    /// @notice Permanently removes the caller's active alert unit.
+    /// @dev Holder self-burn intentionally remains available after issuance finalization.
+    function burn() external {
+        if (_status[msg.sender] != AlertStatus.Active) {
+            revert NoAlertBalance(msg.sender);
+        }
+
+        _status[msg.sender] = AlertStatus.Burned;
+        totalSupply -= _UNIT;
+        emit Transfer(msg.sender, address(0), _UNIT);
     }
 
     /// @notice Permanently closes distribution.
@@ -151,7 +186,7 @@ contract RepMigrationAlert {
         }
 
         finalized = true;
-        emit DistributionFinalized(authority, totalSupply);
+        emit DistributionFinalized(authority, totalIssued);
     }
 
     /// @notice Disabled; always reverts.
