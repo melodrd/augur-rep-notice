@@ -4,7 +4,7 @@ This repository is intended to hold the smart contract and deterministic operati
 
 ## Status
 
-Foundation only. The repository has reproducible Foundry and Bun toolchains, dependency pins, documentation, CI, and a foundation-level TypeScript test.
+Foundation complete. The repository has reproducible Foundry and Bun toolchains, dependency pins, documentation, CI, and a foundation-level TypeScript test. Product specification is the next milestone and has not started.
 
 **No production Solidity contract, token, deployment script, recipient-selection logic, wallet, key, or RPC configuration exists yet.**
 
@@ -18,6 +18,8 @@ Foundation only. The repository has reproducible Foundry and Bun toolchains, dep
 - Biome `2.5.4` for TypeScript formatting and linting
 - Slither `0.11.5`, installed as a Python CLI with `uv`
 - Node.js as a compatibility fallback only
+
+Bun is the sole repository JavaScript package manager. `TOOLCHAIN_SETUP_REPORT.md` is a historical pre-foundation environment record whose disposable pnpm and `tsx` checks are not current repository policy.
 
 ## Repository layout
 

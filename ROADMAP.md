@@ -1,8 +1,8 @@
 # Roadmap
 
-Only Phase 1 is in progress. Later phases require their stated entry conditions and explicit maintainer decisions.
+Phase 1 is complete. Phase 2 is the next milestone and has not started. Later phases require their stated entry conditions and explicit maintainer decisions.
 
-## 1. Foundation and reproducibility — In progress
+## 1. Foundation and reproducibility — Complete
 
 - Objective: Establish a minimal, pinned Foundry and Bun repository.
 - Deliverables: Git foundation, dependencies, directory layout, documentation, Makefile, CI, and foundation checks.
@@ -10,7 +10,7 @@ Only Phase 1 is in progress. Later phases require their stated entry conditions 
 - Exit conditions: All local verification passes and the initial foundation commit is created.
 - Non-goals: Production Solidity, recipient logic, RPC access, wallets, deployments, and transactions.
 
-## 2. Product specification — Not started
+## 2. Product specification — Next, not started
 
 - Objective: Approve the notice’s exact meaning and product behavior.
 - Deliverables: Approved metadata, authority, finalization, eligibility, and communications decisions.

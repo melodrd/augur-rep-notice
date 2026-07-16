@@ -57,6 +57,15 @@ The backup was not deleted. A real Git repository was then initialized on branch
 
 The operating system already had `/usr/bin/bun` at version `1.3.14`, but the official pinned installation was still completed as required. Final verification put `~/.bun/bin` first on `PATH`.
 
+### Foundation closeout identity check
+
+The apparent Bun version mismatch came from two different binaries built from the same release commit:
+
+- `/usr/bin/bun` was a distribution-provided build reporting `1.3.14-canary.1+0d9b296af`.
+- `~/.bun/bin/bun` was the official stable build reporting `1.3.14+0d9b296af`.
+
+The official `bun-v1.3.14` release is commit `0d9b296af33f2b851fcbf4df3e9ec89751734ba4`. The stable binary was already installed, so no version or dependency pin changed. Fish PATH precedence was corrected to select `~/.bun/bin/bun`.
+
 ## Disposable Bun smoke test
 
 The disposable project verified:

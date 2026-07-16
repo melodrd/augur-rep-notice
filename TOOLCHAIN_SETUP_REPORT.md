@@ -1,5 +1,7 @@
 # Toolchain Setup Report
 
+> **Historical record:** This report predates repository initialization and records disposable pnpm and `tsx` smoke tests. It is not current repository policy. `AGENTS.md`, `README.md`, `ops/README.md`, `.bun-version`, and `ops/package.json` are authoritative; Bun `1.3.14` is the sole repository JavaScript package manager and `tsx` must not be added.
+
 ## Summary
 
 Overall status: PASS WITH WARNINGS

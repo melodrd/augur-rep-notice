@@ -1160,6 +1160,16 @@ Wallet presentation is an empirical test result, not a guaranteed protocol behav
 - Require human review for every production-contract change.
 - Require separate human review for recipient-data changes.
 
+Use Conventional Commits for every commit subject:
+
+```text
+<type>(<optional-scope>): <imperative summary>
+```
+
+- Use a standard type such as `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, or `revert`.
+- Use `!` and a `BREAKING CHANGE:` footer only for an actual incompatible change.
+- Keep each commit single-purpose, and explain security or deployment impact in the body when applicable.
+
 Before editing, inspect:
 
 ```bash
