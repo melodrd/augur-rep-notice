@@ -247,6 +247,15 @@ contract RepMigrationAlertTest is Test {
         );
     }
 
+    function test_UnauthorizedCallAfterFinalizationFailsAuthorizationFirst() public {
+        vm.prank(AUTHORITY);
+        alert.finalize();
+
+        _assertDistributionRevertsAtomically(
+            OUTSIDER, new address[](0), abi.encodeWithSelector(RepMigrationAlert.UnauthorizedCaller.selector, OUTSIDER)
+        );
+    }
+
     function test_OversizedBatchAfterFinalizationFailsFinalizationFirst() public {
         vm.prank(AUTHORITY);
         alert.finalize();
@@ -258,6 +267,15 @@ contract RepMigrationAlertTest is Test {
         );
     }
 
+    function test_EmptyBatchAfterFinalizationFailsFinalizationFirst() public {
+        vm.prank(AUTHORITY);
+        alert.finalize();
+
+        _assertDistributionRevertsAtomically(
+            AUTHORITY, new address[](0), abi.encodeWithSelector(RepMigrationAlert.DistributionAlreadyClosed.selector)
+        );
+    }
+
     function test_BatchAboveMaximumAndRemainingCapFailsMaximumFirst() public {
         uint256 provided = alert.MAX_BATCH_SIZE() + 1;
 
@@ -265,6 +283,17 @@ contract RepMigrationAlertTest is Test {
             AUTHORITY,
             _sequentialRecipients(provided),
             abi.encodeWithSelector(RepMigrationAlert.BatchSizeExceeded.selector, provided, alert.MAX_BATCH_SIZE())
+        );
+    }
+
+    function test_CapOverflowWithInvalidRecipientFailsCapFirst() public {
+        RepMigrationAlert cappedAlert = new RepMigrationAlert(AUTHORITY, 1);
+
+        _assertDistributionRevertsAtomically(
+            cappedAlert,
+            AUTHORITY,
+            _recipients(address(0), RECIPIENT_A),
+            abi.encodeWithSelector(RepMigrationAlert.DistributionCapExceeded.selector, 2, 1)
         );
     }
 
