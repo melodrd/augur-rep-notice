@@ -34,6 +34,8 @@ When a requested change conflicts with a security invariant in this file, stop a
 
 Assume the project is experimental until the maintainers explicitly mark a release as production-ready.
 
+`docs/product/SPEC.md` is approved for implementation planning as of 2026-07-16. Its product and contract behavior must not be reinterpreted for implementation convenience. Any behavioral change requires an explicit specification revision, threat-model review, and corresponding acceptance-test updates.
+
 Default operating mode:
 
 - Work locally.
@@ -81,9 +83,9 @@ The system must not optimize for:
 
 ---
 
-## 5. Current product assumptions
+## 5. Approved product architecture
 
-Until `docs/product/SPEC.md` states otherwise, use these assumptions:
+Use these approved constraints:
 
 - The notice token is an informational artifact only.
 - It has no economic value.
@@ -95,14 +97,25 @@ Until `docs/product/SPEC.md` states otherwise, use these assumptions:
 - Users must verify migration information through Augur's official surfaces.
 - The token name and symbol are not identity guarantees.
 - The deployed contract address is the canonical identifier.
+- The fixed name is `Augur REP Migration Notice`.
+- The fixed symbol is `REPNOTICE`.
 - Every eligible recipient receives exactly one whole notice unit.
 - Token decimals are `0`.
+- Initial supply is `0`.
+- One array-based `distribute(address[] recipients)` path serves canaries and batches.
+- Distribution is strictly atomic: any invalid recipient reverts the complete call.
+- The constructor receives one nonzero immutable authority and one nonzero immutable distribution cap.
+- The exact distribution cap equals the unique-address count in the final approved recipient manifest.
+- Authority transfer, recovery, successor nomination, and secondary administrators are absent.
 - Ordinary transfers are disabled.
 - `transferFrom` is disabled.
 - Approvals are disabled.
+- Allowance always returns zero.
 - Operator approvals or permits are not supported.
+- Burning is not supported.
 - Minting or distribution becomes permanently impossible after finalization.
 - Finalization is irreversible.
+- Repeated finalization reverts.
 - No upgrade mechanism exists.
 - The contract does not custody REP.
 - The contract does not custody ETH.
@@ -110,7 +123,9 @@ Until `docs/product/SPEC.md` states otherwise, use these assumptions:
 - The contract does not call migration contracts.
 - The contract does not execute arbitrary external calls.
 - The contract does not contain payable functions.
-- The contract does not expose withdrawal or recovery functions unless an approved specification explicitly requires them.
+- The contract does not expose withdrawal or recovery functions.
+- The contract is a standalone minimal implementation and must not inherit OpenZeppelin token, ownership, access-control, pausing, proxy, upgrade, or generalized framework contracts.
+- Mainnet authority is a dedicated 2-of-3 Safe with independent human signers. Agents may never operate it, sign for it, submit its transactions, or broadcast.
 
 Any change to these assumptions requires an explicit update to `docs/product/SPEC.md` and corresponding tests.
 
@@ -166,8 +181,10 @@ Use:
 - Anvil;
 - Cast;
 - `forge-std`;
-- OpenZeppelin Contracts when a reviewed primitive is genuinely needed;
+- OpenZeppelin Contracts only if an explicit approved need outside the production notice contract is demonstrated;
 - Slither for static analysis.
+
+The approved notice contract must be standalone and must not inherit from OpenZeppelin `ERC20`, `Ownable`, `Ownable2Step`, `AccessControl`, `Pausable`, proxy, or upgradeable contracts. If implementation imports no OpenZeppelin code, remove the unused dependency later in a separate reviewed `chore(deps)` change.
 
 Do not introduce Hardhat, Truffle, Brownie, or a second Solidity framework unless the maintainers explicitly approve the additional complexity.
 
@@ -328,38 +345,42 @@ Do not emit misleading events for failed or skipped recipients.
 
 ### 9.2 Administrative design
 
-Use the minimum administrative authority necessary.
+Use exactly one nonzero constructor-supplied immutable authority.
 
-Default preference:
+- The deployer receives no implicit privilege.
+- The authority can distribute before finalization and can finalize.
+- No authority transfer, acceptance, renunciation, successor nomination, recovery administrator, or secondary role exists.
+- No `Ownable`, `Ownable2Step`, or role-based access-control system is permitted.
+- No post-deployment authority handoff exists.
+- If the authority is wrong, compromised beyond recovery, or unavailable, abandon or redeploy the candidate.
 
-- one clearly defined administrative authority;
-- the production authority is a dedicated, maintainer-approved address with documented ownership, signer, configuration, and incident assumptions;
-- a dedicated Safe is preferred, but a one-owner, one-signature Safe must not be described as providing multisignature security;
-- no personal hot wallet controls production behavior;
-- no permanent deployer privileges;
-- no hidden secondary admin;
-- no overlapping owner and role systems unless the written specification requires both.
+Mainnet authority policy:
 
-The current draft specification proposes an immutable constructor-supplied authority with no transfer mechanism. Until that proposal is approved:
+- one dedicated Safe address is the immutable contract authority;
+- exactly three independently controlled human signer addresses;
+- threshold two;
+- no enabled modules;
+- no custom guard;
+- a reviewed fallback handler appropriate to the frozen Safe version;
+- no personal hot wallet, shared custody, delegated signing, or unrelated DeFi activity;
+- agents may prepare unsigned review material only and may never operate the Safe.
 
-1. Treat deployer and authority as separate concepts.
-2. Verify the intended authority before deployment.
-3. Do not assume the deployer receives temporary privilege.
-4. Do not plan a post-deployment authority handoff.
-5. Do not claim organizational control without reviewed evidence.
-
-Do not add role-based access control merely because it is available in a library.
+Exact Safe address, signer identities, Safe version, and configuration evidence remain deferred gates. Do not invent them or claim organizational control without reviewed evidence.
 
 ### 9.3 Distribution behavior
 
 The distribution mechanism must:
 
+- expose one array-based distribution path for both one-address canaries and batches;
+- reject an empty array;
 - reject the zero address;
 - prevent duplicate notices;
+- revert the complete call for a duplicate within the array or a previously notified recipient;
 - prevent a recipient from receiving more than one notice;
 - preserve deterministic behavior;
-- emit enough information for reconciliation;
+- emit one `Transfer(address(0), recipient, 1)` event per successful recipient;
 - reject distribution after finalization;
+- enforce `totalSupply + recipients.length <= distributionCap`;
 - avoid external calls;
 - avoid unbounded loops over stored recipient sets;
 - support operationally safe batches;
@@ -369,11 +390,13 @@ Do not hardcode a maximum batch size until gas tests justify it.
 
 When setting a batch maximum:
 
-- benchmark several batch sizes;
-- account for worst-case calldata;
-- account for block gas constraints;
-- leave operational safety margin;
-- document the result in `docs/product/SPEC.md` or a gas report.
+- measure entirely new recipients and include calldata cost;
+- cover one-address, typical, maximum, duplicate, cap-boundary, and revert scenarios;
+- use a pinned target-chain block gas limit;
+- choose a compile-time maximum whose worst-case successful call uses no more than 50% of that limit;
+- use a lower bound when calldata, tooling, execution, or Safe simulation is stricter;
+- document the benchmark, block conditions, constant, and margin;
+- obtain independent review before freezing the number.
 
 ### 9.4 Non-transferability
 
@@ -382,17 +405,15 @@ Ordinary token movement must remain impossible.
 Tests must demonstrate that all applicable transfer paths fail, including:
 
 - `transfer`;
+- zero-value `transfer`;
 - `transferFrom`;
 - allowance-based movement;
-- any inherited transfer helper;
 - any mint path not authorized by the specification;
-- any burn path not authorized by the specification.
+- any burn path.
 
 Do not rely only on frontend restrictions.
 
-Enforce non-transferability in contract logic.
-
-If inheriting OpenZeppelin ERC-20, carefully verify the correct override point for the pinned OpenZeppelin major version.
+Enforce non-transferability in explicit standalone contract logic. Do not create inherited movement or allowance paths.
 
 ### 9.5 Finalization
 
@@ -415,15 +436,13 @@ No upgrade mechanism may bypass finalization.
 
 Token metadata must be defined in the approved specification.
 
-Do not improvise the production:
+The contract metadata is fixed:
 
-- name;
-- symbol;
-- decimals;
-- notice wording;
-- canonical URL;
-- branding;
-- description.
+- name: `Augur REP Migration Notice`;
+- symbol: `REPNOTICE`;
+- decimals: `0`.
+
+Hardcode or compile these values into the candidate. Do not accept constructor-configurable metadata. Do not place a migration URL in token metadata or contract storage.
 
 Remember:
 
@@ -642,10 +661,14 @@ Treat compiler warnings as findings requiring review.
 Unit tests must cover at least:
 
 - constructor state;
-- token metadata;
-- decimals;
+- exact fixed name and symbol;
+- zero decimals;
 - initial total supply;
 - initial authority;
+- zero-authority rejection;
+- initial immutable distribution cap;
+- zero-cap rejection;
+- deployer has no implicit privilege;
 - successful one-recipient array distribution;
 - successful multi-recipient array distribution;
 - zero-address rejection;
@@ -658,13 +681,19 @@ Unit tests must cover at least:
 - transfer rejection;
 - `transferFrom` rejection;
 - approval rejection;
+- allowance always returning zero;
+- absence of permit, allowance helpers, and burn functions;
 - distribution before finalization;
 - distribution after finalization;
 - irreversible finalization;
+- repeated-finalization rejection;
 - supply accounting;
-- immutable distribution-cap accounting, if approved;
+- immutable distribution-cap accounting;
+- cap-boundary success and cap-overflow atomic failure;
+- maximum-batch boundary after the constant is frozen;
 - event contents;
-- absence of an authority-transfer path, if immutable authority is approved.
+- finalization below the cap;
+- absence of authority-transfer, owner, secondary-role, recovery, external-call, payable, proxy, upgrade, delegatecall, fallback, and receive paths.
 
 ### 13.3 Fuzz tests
 
@@ -1030,7 +1059,7 @@ For every deployed environment, record:
 - deployment transaction hash;
 - deployer address;
 - immutable authority address;
-- immutable distribution cap, if approved;
+- immutable distribution cap;
 - source commit;
 - compiler version;
 - optimizer settings;
@@ -1053,7 +1082,7 @@ Post-deployment checks must confirm:
 - decimals are correct;
 - total supply is correct;
 - authority is correct;
-- distribution cap is correct, if approved;
+- distribution cap is correct and equals the approved manifest count;
 - deployer has no unintended authority;
 - transfers fail;
 - approvals fail;
@@ -1348,6 +1377,7 @@ Do not describe the system as ready for a mainnet canary until all gates below a
 ### Gate B: Contract
 
 - Minimal implementation complete.
+- Frozen acceptance criteria implemented.
 - Unit tests complete.
 - Fuzz tests complete.
 - Invariant tests complete.
@@ -1481,29 +1511,28 @@ When beginning from an empty repository, use this task:
 
 ## 27. Maintainer decisions still required
 
-Do not guess these values:
+The product and contract architecture are approved. Do not guess the remaining evidence-dependent values:
 
-- final token name;
-- final token symbol;
-- approval of disabled burning;
-- exact authority model;
-- production controller type, address, and Safe configuration if applicable;
-- immutable issuance-cap approval and derivation;
 - REP contract addresses in scope;
 - fork universe or REP versions in scope;
 - definition of successfully migrated;
 - snapshot block;
 - minimum REP threshold;
 - exchange and protocol exclusions;
+- final approved recipient manifest;
+- exact numeric distribution cap derived from that manifest;
 - canary recipient count;
 - maximum batch size;
-- finalization trigger;
+- exact 2-of-3 Safe address;
+- signer identities and custody evidence;
+- Safe version and reviewed fallback handler;
 - budget;
-- official canonical migration URL;
-- public communications language;
+- exact official canonical page URL;
+- exact wallet-product test matrix;
 - incident-response procedure.
+- deployment commit and bytecode hashes.
 
-Track unresolved decisions in `docs/product/SPEC.md`.
+Every item must follow the owner, evidence, decision rule, phase, and release gate in the specification's deferred-with-gate register.
 
 ---
 

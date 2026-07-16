@@ -4,11 +4,11 @@ This repository contains the foundation for an experimental, non-economic on-cha
 
 ## Status
 
-Repository foundation is complete. Product specification is in progress and still requires maintainer approval.
+Repository foundation and product architecture are complete. The design-stage threat model and acceptance criteria are the current phase; minimal contract implementation is next only after that gate is complete.
 
 **No production Solidity contract, deployment script, recipient-selection logic, wallet, key, or RPC configuration exists.**
 
-Start with the [documentation index](docs/README.md) and the draft [product specification](docs/product/SPEC.md).
+Start with the [documentation index](docs/README.md), the approved [product specification](docs/product/SPEC.md), and the [architecture decision record](docs/architecture/DECISION_RECORD.md).
 
 ## Toolchain
 
@@ -18,7 +18,7 @@ Start with the [documentation index](docs/README.md) and the draft [product spec
 - Biome for TypeScript formatting and linting
 - Slither managed as a Python CLI with `uv`
 
-OpenZeppelin Contracts and `forge-std` are pinned dependencies. Their presence does not approve a future contract architecture.
+OpenZeppelin Contracts and `forge-std` are pinned dependencies. The approved production contract architecture is standalone and must not inherit OpenZeppelin token, ownership, access-control, proxy, or upgradeable contracts. An unused OpenZeppelin dependency will be removed later through a separate reviewed dependency change.
 
 ## Standard checks
 

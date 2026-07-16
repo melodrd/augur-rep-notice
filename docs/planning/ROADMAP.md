@@ -1,6 +1,6 @@
 # Roadmap
 
-Foundation and reproducibility are complete. Product specification is in progress and still requires maintainer approval. No later phase has started.
+Foundation, reproducibility, and product specification are complete. The design-stage threat model and acceptance criteria are in progress. Contract implementation has not started.
 
 ## 1. Foundation and reproducibility — Complete
 
@@ -9,20 +9,20 @@ Foundation and reproducibility are complete. Product specification is in progres
 - Exit status: Completed and recorded in the historical [foundation report](../reports/FOUNDATION_SETUP_REPORT.md).
 - Non-goals: Production Solidity, recipient logic, RPC access, wallets, deployments, and transactions.
 
-## 2. Product specification — In progress
+## 2. Product specification — Complete
 
 - Objective: Define the notice's exact meaning and product behavior without implementing it.
-- Deliverables: Reviewable contract behavior, metadata constraints, authority and finalization proposals, security invariants, acceptance criteria, and open maintainer decisions.
+- Deliverables: Approved contract behavior, fixed metadata, architecture constraints, security invariants, deterministic deferred gates, an architecture decision record, and canonical communications rules.
 - Entry conditions: Phase 1 complete.
-- Exit conditions: Maintainers approve [`docs/product/SPEC.md`](../product/SPEC.md), including the interface compatibility boundary, immutable authority, production-controller policy, immutable issuance cap, atomic array-batch semantics, finalization semantics, event policy, and token metadata, with no unresolved contract-level ambiguity.
+- Exit status: Completed on 2026-07-16 through approval of [`docs/product/SPEC.md`](../product/SPEC.md), the [architecture decision record](../architecture/DECISION_RECORD.md), and [canonical notice messaging](../communications/NOTICE_MESSAGING.md). Evidence-dependent values are explicit gated parameters rather than unresolved contract behavior.
 - Non-goals: Contract implementation, tests, recipient extraction, RPC access, or deployment.
 
-## 3. Threat model and acceptance criteria — Not started
+## 3. Threat model and acceptance criteria — In progress
 
 - Objective: Review the approved behavior against abuse cases and convert it into accepted security and test gates.
 - Deliverables: Approved threat model, owned mitigations, invariants, and acceptance criteria.
 - Entry conditions: Product specification approved.
-- Exit conditions: Maintainers accept mitigations and assign ownership for unresolved operational risks.
+- Exit conditions: Maintainers approve the design-stage threat model, classify accepted trade-offs, assign mitigation ownership, and freeze the complete future acceptance-test contract.
 - Non-goals: Claiming an audit or absence of vulnerabilities.
 
 ## 4. Minimal contract implementation — Not started
