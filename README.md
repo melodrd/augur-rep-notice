@@ -1,10 +1,10 @@
-# Augur REP Migration Notice
+# REP MIGRATION ALERT
 
-This repository contains the foundation for an experimental, non-economic on-chain notice intended to test whether some REP holders can be made more aware of official migration information.
+This repository contains the foundation for an experimental, non-economic on-chain alert intended to help selected REP-holder addresses discover official migration information. The alert performs no migration and requires no recipient interaction.
 
 ## Status
 
-Repository foundation, product architecture, design-stage threat model, and acceptance criteria are complete. Minimal contract implementation is the next phase and has not started.
+Repository foundation, product specification, threat model, and acceptance criteria are complete after the 2026-07-16 revision. Minimal contract implementation is next and has not started.
 
 **No production Solidity contract, deployment script, recipient-selection logic, wallet, key, or RPC configuration exists.**
 

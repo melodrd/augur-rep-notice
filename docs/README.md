@@ -1,6 +1,6 @@
 # Project documentation
 
-This directory contains the current product, security, planning, operational, and historical documentation for the Augur REP Migration Notice experiment.
+This directory contains the current product, security, planning, operational, and historical documentation for the `REP MIGRATION ALERT` experiment.
 
 | Document | Purpose | Status |
 | --- | --- | --- |

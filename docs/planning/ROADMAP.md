@@ -1,98 +1,106 @@
 # Roadmap
 
-Foundation, reproducibility, product specification, design-stage threat modeling, and acceptance-criteria definition are complete. Minimal contract implementation is next and has not started.
+## Project status
 
-## 1. Foundation and reproducibility — Complete
+- Foundation: complete
+- Product specification: complete after the 2026-07-16 revision
+- Threat model and acceptance criteria: complete after the 2026-07-16 revision
+- Minimal contract implementation: next
 
-- Objective: Establish a minimal, pinned Foundry and Bun repository.
-- Deliverables: Git foundation, dependencies, directory layout, documentation, Makefile, CI, and foundation checks.
-- Exit status: Completed and recorded in the historical [foundation report](../reports/FOUNDATION_SETUP_REPORT.md).
-- Non-goals: Production Solidity, recipient logic, RPC access, wallets, deployments, and transactions.
+## 1. Foundation and reproducibility
 
-## 2. Product specification — Complete
+Status: Complete
 
-- Objective: Define the notice's exact meaning and product behavior without implementing it.
-- Deliverables: Approved contract behavior, fixed metadata, architecture constraints, security invariants, deterministic deferred gates, an architecture decision record, and canonical communications rules.
-- Entry conditions: Phase 1 complete.
-- Exit status: Completed on 2026-07-16 through approval of [`docs/product/SPEC.md`](../product/SPEC.md), the [architecture decision record](../architecture/DECISION_RECORD.md), and [canonical notice messaging](../communications/NOTICE_MESSAGING.md). Evidence-dependent values are explicit gated parameters rather than unresolved contract behavior.
-- Non-goals: Contract implementation, tests, recipient extraction, RPC access, or deployment.
+Entry condition: Repository creation.
 
-## 3. Threat model and acceptance criteria — Complete
+Exit condition: Pinned Foundry and Bun toolchains, directory structure, CI, standard commands, and historical setup reports are present.
 
-- Objective: Review the approved behavior against abuse cases and convert it into accepted security and test gates.
-- Deliverables: Approved threat model, owned mitigations, invariants, and acceptance criteria.
-- Entry conditions: Product specification approved.
-- Exit status: Completed on 2026-07-16 through approval of the design-stage [threat model](../security/THREAT_MODEL.md), classification of accepted trade-offs, assignment of mitigation ownership, and the frozen acceptance criteria in the [product specification](../product/SPEC.md).
-- Non-goals: Claiming an audit or absence of vulnerabilities.
+## 2. Product specification
 
-## 4. Minimal contract implementation — Next
+Status: Complete
 
-- Objective: Implement only the approved notice behavior.
-- Deliverables: One short production contract with approved immutable authorization, capped unique distribution, non-transferability, event, and finalization behavior.
-- Entry conditions: The approved [product specification](../product/SPEC.md), approved design-stage [threat model](../security/THREAT_MODEL.md), frozen acceptance criteria, and [architecture decision record](../architecture/DECISION_RECORD.md) are committed consistently; Phases 2 and 3 are complete.
-- Exit conditions: Implementation matches the approved specification and compiles without unresolved warnings.
-- Non-goals: Snapshot tooling, deployment, upgradeability, callbacks, claims, or generalized frameworks.
+Entry condition: Foundation complete.
 
-## 5. Unit, fuzz, and invariant testing — Not started
+Exit condition: Purpose, metadata, authority, distribution, cap, finalization, interface, communications meaning, and deferred evidence gates are approved.
 
-- Objective: Exercise contract behavior and mandatory security invariants.
-- Deliverables: Unit, fuzz, invariant, coverage, gas, and Slither reports.
-- Entry conditions: Minimal contract candidate exists.
-- Exit conditions: Relevant checks pass and findings are resolved or explicitly accepted by maintainers.
-- Non-goals: Treating test coverage as an audit.
+## 3. Threat model and acceptance criteria
 
-## 6. Snapshot and recipient tooling — Not started
+Status: Complete
 
-- Objective: Build deterministic, evidence-backed recipient data processing.
-- Deliverables: Schemas, fixtures, validation, filtering, reason codes, checksums, batches, and reconciliation.
-- Entry conditions: Eligibility and migration rules approved.
-- Exit conditions: The same reviewed inputs reproduce identical outputs.
-- Non-goals: Public RPC access without an approved pinned plan or manual production-manifest edits.
+Entry condition: Product specification approved.
 
-## 7. Pinned mainnet-fork simulation — Not started
+Exit condition: Threats, accepted trade-offs, release controls, invariants, and frozen implementation acceptance criteria are approved.
 
-- Objective: Test approved assumptions against reproducible historical Ethereum state.
-- Deliverables: Pinned fork tests, gas measurements, simulated batches, finalization, and reconciliation.
-- Entry conditions: Contract and recipient tooling pass local review; snapshot block approved.
-- Exit conditions: Fork results reconcile and operational limits are documented.
-- Non-goals: Broadcast or latest-block dependencies.
+## 4. Minimal contract implementation
 
-## 8. Sepolia and wallet-display testing — Not started
+Status: Next
 
-- Objective: Empirically test deployment operations and wallet presentation.
-- Deliverables: Verified Sepolia deployment records, immutable controller configuration, distribution, finalization, and wallet observations.
-- Entry conditions: Explicit maintainer authorization and all prior local gates complete.
-- Exit conditions: Testnet behavior and communications risks are reviewed.
-- Non-goals: Mainnet execution or promises of wallet visibility.
+Entry condition: Specification, decisions, threat model, and acceptance criteria are committed consistently.
 
-## 9. Independent review — Not started
+Exit condition: One minimal contract matches the specification and compiles without unresolved warnings.
 
-- Objective: Obtain separate review of code, data, and deployment artifacts.
-- Deliverables: Review findings, responses, dependency freeze, and candidate commit.
-- Entry conditions: Sepolia candidate complete.
-- Exit conditions: Findings are resolved or formally accepted by maintainers.
-- Non-goals: Self-declaring the project audited.
+## 5. Unit, fuzz, invariant, gas, and static-analysis work
 
-## 10. Mainnet canary preparation — Not started
+Status: Not started
 
-- Objective: Produce reproducible, unsigned material for a limited canary.
-- Deliverables: Reproduced bytecode, Safe simulation, unsigned calldata, canary list, checks, and stop procedures.
-- Entry conditions: Independent review and all release gates complete.
-- Exit conditions: Human maintainers approve exact artifacts and stop conditions.
-- Non-goals: Signing, submission, broadcast, or Safe operation by an agent.
+Entry condition: Minimal contract candidate exists.
 
-## 11. Human-controlled canary — Not started
+Exit condition: Required tests and measurements pass; warnings and findings are resolved or explicitly accepted.
 
-- Objective: Execute the approved canary under human control.
-- Deliverables: Human-signed transactions, monitoring observations, and canary reconciliation.
-- Entry conditions: Phase 10 approved and incident-response ownership active.
-- Exit conditions: Maintainers approve continuation or stop.
-- Non-goals: Autonomous rollout or agent-controlled transactions.
+## 6. Snapshot and recipient tooling
 
-## 12. Reconciliation and irreversible finalization — Not started
+Status: Not started
 
-- Objective: Reconcile the approved rollout and permanently disable distribution.
-- Deliverables: Final reconciliation, human-approved finalization, post-finalization checks, and public verification records.
-- Entry conditions: Every approved batch reconciles and maintainers authorize finalization.
-- Exit conditions: Finalization is confirmed irreversible and records are complete.
-- Non-goals: Unfinalization, upgrade, recovery minting, or new distribution authority.
+Entry condition: REP sources, migration semantics, snapshot, thresholds, and exclusions are approved.
+
+Exit condition: Deterministic inputs reproduce identical validated, reason-coded, checksummed outputs.
+
+## 7. Pinned mainnet-fork simulation
+
+Status: Not started
+
+Entry condition: Contract and recipient tooling pass local review; snapshot block is approved.
+
+Exit condition: Pinned-fork state, gas, distribution, reconciliation, and finalization results are reviewed.
+
+## 8. Sepolia rehearsal
+
+Status: Not started
+
+Entry condition: Explicit human authorization and all prior local gates complete.
+
+Exit condition: Candidate deployment, source verification, dedicated Sepolia EOA operation, distribution, failure cases, reconciliation, and finalization are reviewed.
+
+## 9. Independent review and candidate freeze
+
+Status: Not started
+
+Entry condition: Sepolia candidate and operational evidence are complete.
+
+Exit condition: Code, data, communications, and unsigned deployment artifacts are independently reviewed; exact commit and bytecode are frozen.
+
+## 10. Mainnet canary preparation
+
+Status: Not started
+
+Entry condition: All contract, data, communications, EOA-control, and review gates complete.
+
+Exit condition: Reproduced bytecode, constructor data, dedicated-EOA transaction simulations, canary manifests, unsigned calldata, checksums, and stop procedures are approved.
+
+## 11. Human-controlled canary and rollout
+
+Status: Not started
+
+Entry condition: Exact artifacts and stop conditions are approved.
+
+Exit condition: Human-signed transactions are confirmed and every batch reconciles or rollout is stopped.
+
+## 12. Reconciliation and irreversible finalization
+
+Status: Not started
+
+Entry condition: Approved rollout is complete or an incident requires closure.
+
+Exit condition: Final supply is reconciled, finalization is confirmed irreversible, and public verification records are complete.
+
+No phase authorizes an agent to access a private key, sign, submit, or broadcast.
