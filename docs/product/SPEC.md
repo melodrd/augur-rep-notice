@@ -97,11 +97,12 @@ Receipt records only that the distribution authority successfully issued a notic
 
 The contract is responsible only for:
 
-- **PROPOSED:** representing notice ownership through a wallet-compatible balance and metadata interface;
+- **PROPOSED:** representing notice receipt through an ERC-20-shaped metadata, balance, supply, transfer, approval, and allowance interface used for compatibility experiments;
 - **PROPOSED:** preventing duplicate notice issuance;
 - **CONFIRMED:** enforcing distribution and finalization authorization;
 - **CONFIRMED:** preventing transfer and approval behavior;
 - **CONFIRMED:** permanently ending distribution through irreversible finalization;
+- **PROPOSED:** enforcing an immutable upper bound on total notice issuance;
 - **PROPOSED:** emitting events sufficient for reconciliation;
 - **PROPOSED:** exposing the smallest useful public read surface.
 
@@ -126,24 +127,38 @@ The later operations pipeline is responsible for:
 
 ### Proposed default
 
-**PROPOSED:** ERC-20-compatible balance and metadata interface.
+**PROPOSED:** The notice exposes an ERC-20-shaped metadata, balance, supply, transfer, approval, and allowance interface for wallet, explorer, and tooling recognition. It intentionally does not claim full ERC-20 behavioral compliance because token movement and approvals are disabled.
 
-Reasons:
+ERC-20 tooling commonly expects the selectors for `name`, `symbol`, `decimals`, `totalSupply`, `balanceOf`, `transfer`, `transferFrom`, `approve`, and `allowance`. The notice exposes the relevant selectors so the project can empirically test recognition by wallets, explorers, indexers, and common Ethereum tools.
 
-- `balanceOf` is widely understood by wallets, explorers, and portfolio interfaces.
-- Standard metadata offers the best available chance of familiar representation.
-- Total supply and balances are straightforward to inspect.
-- Reviewers and operators can use common Ethereum tooling.
+This is a compatibility experiment, not a claim of strict ERC-20 behavior:
 
-Trade-offs:
+- movement and approval functions deliberately reject every use;
+- zero-value transfers also reject;
+- `allowance` always reports zero;
+- permit and burn functions are absent;
+- strict ERC-20 behavior ordinarily permits some calls that this notice intentionally rejects;
+- familiar selectors do not guarantee wallet visibility or correct presentation;
+- wallet display remains an empirical hypothesis requiring Sepolia and target-interface observation;
+- metadata does not authenticate a deployment, and matching names or symbols are not proof of authenticity.
 
-- ERC-20 compatibility exposes familiar transfer and approval function selectors even though the notice has no legitimate movement or spender use case.
-- Those functions must be deliberately disabled in contract logic.
-- Some integrations may assume transferability despite reverts.
-- ERC-20 compatibility does not guarantee automatic wallet display.
-- Token names and symbols are copyable and do not authenticate the deployment.
+### Proposed read and interaction surface
 
-This interface choice remains **PROPOSED** until approved. It does not select OpenZeppelin, inheritance, or a custom implementation. Library and implementation structure must be chosen later based on the approved behavior and reviewed pinned dependencies.
+| Function | Proposed behavior |
+| --- | --- |
+| `name()` | Return approved notice name |
+| `symbol()` | Return approved notice symbol |
+| `decimals()` | Return `0` |
+| `totalSupply()` | Return successfully issued notice units |
+| `balanceOf(address)` | Return `0` or `1` |
+| `allowance(address,address)` | Always return `0` |
+| `transfer(address,uint256)` | Revert for every invocation, including zero-value transfers |
+| `transferFrom(address,address,uint256)` | Revert for every invocation |
+| `approve(address,uint256)` | Revert for every invocation |
+| `permit(...)` | Absent |
+| Burn functions | Absent |
+
+This interface choice remains **PROPOSED** until explicitly approved. Exact Solidity signatures beyond the conceptual standard selectors, implementation inheritance, library use, and override points remain **DEFERRED** until implementation design. The future implementation must be judged against the approved behavior rather than described broadly as fully ERC-20 compliant.
 
 ### Alternatives considered
 
@@ -184,24 +199,30 @@ Final name, symbol, descriptive wording, and communications presentation are **U
 Proposed defaults:
 
 - **PROPOSED:** Initial total supply is zero.
+- **PROPOSED:** Decimals are zero.
 - **PROPOSED:** Each successful recipient receives exactly one unit.
 - **PROPOSED:** No address may hold more than one unit.
+- **PROPOSED:** Balances remain either zero or one.
 - **PROPOSED:** Total supply equals the number of unique successfully notified addresses.
 - **PROPOSED:** An already-notified address cannot receive another unit.
 - **PROPOSED:** Failed distribution attempts do not change balances or supply.
 - **PROPOSED:** Existing balances remain unchanged after finalization.
+- **PROPOSED:** No supply is issued during construction.
+- **PROPOSED:** The deployer never receives an inventory of notices.
 
-These properties depend on disabling ordinary transfers and holder burning. If balances could move, `balanceOf == 1` would no longer mean that the address was directly notified. If burning were allowed, total supply would no longer equal the number of successful notices. The proposed simple accounting invariant therefore requires both transfer and burn paths to remain disabled.
+These properties depend on transfers being impossible, approvals being unusable, burning being absent, and duplicate issuance being rejected. If balances could move, `balanceOf(address) == 1` would no longer mean that the address was directly notified. If burning were allowed, total supply would no longer equal the number of successful notices. If duplicate issuance were allowed, balances or supply could cease to represent unique successful recipients.
+
+The final token name and symbol remain **UNRESOLVED**. This draft does not invent them.
 
 ## 10. Transfer behavior
 
 | Function or path | Status | Proposed behavior |
 | --- | --- | --- |
-| `transfer` | **PROPOSED** | Revert |
-| `transferFrom` | **PROPOSED** | Revert |
+| `transfer` | **PROPOSED** | Revert for every invocation, including zero-value movement |
+| `transferFrom` | **PROPOSED** | Revert for every invocation, including zero-value movement |
 | Internal ordinary transfer | **PROPOSED** | Not exposed through any external path |
 | Mint/distribution | **PROPOSED** | Restricted to the approved authority while distribution is active |
-| Burn | **PROPOSED** | Disabled unless explicitly approved |
+| Burn | **PROPOSED** | Absent |
 | `burnFrom` | **OUT OF SCOPE** | Unsupported |
 | Bridge movement | **OUT OF SCOPE** | Unsupported |
 | Wrapping supplied by this project | **OUT OF SCOPE** | Unsupported |
@@ -214,9 +235,9 @@ The contract cannot prevent an unrelated third party from creating an external w
 
 | Function or feature | Status | Proposed behavior |
 | --- | --- | --- |
-| `approve` | **PROPOSED** | Revert |
-| `allowance` | **PROPOSED** | Always return zero, or expose only the standard zero state required by the chosen implementation |
-| Allowance increase/decrease | **PROPOSED** | Unsupported or revert |
+| `approve` | **PROPOSED** | Revert for every invocation |
+| `allowance` | **PROPOSED** | Always return zero |
+| Allowance increase/decrease | **PROPOSED** | Absent |
 | Permit | **OUT OF SCOPE** | Unsupported |
 | Operator approvals | **OUT OF SCOPE** | Unsupported |
 | Approval callbacks | **OUT OF SCOPE** | Unsupported |
@@ -227,13 +248,13 @@ Approvals should be disabled because:
 - approval prompts may confuse recipients;
 - approval and permit flows resemble common scam behavior;
 - allowances create unnecessary integration and attack surface;
-- transferable authority would contradict the notice's user-facing meaning.
+- spender authority would contradict the notice's user-facing meaning.
 
-The exact ABI treatment of non-standard allowance helpers is **UNRESOLVED** and depends on the approved ERC-20 implementation approach. No approval path may enable movement.
+No allowance-changing helper, permit path, operator approval, or callback-based approval mechanism is proposed. Exact implementation inheritance remains **DEFERRED**, but no approval path may enable movement.
 
 ## 12. Burn behavior
 
-**PROPOSED:** Holder burning is disabled.
+**PROPOSED:** Burning is absent. There is no holder burn, authority burn, `burnFrom`, or burn-to-remove user flow.
 
 Rationale:
 
@@ -244,7 +265,9 @@ Rationale:
 - Burn functions expand the interface and test surface.
 - Telling users to burn a notice could create dangerous behavioral expectations.
 
-If burning were approved later, the specification would need to redefine:
+Users may hide the notice through wallet-interface controls instead. That preserves the direct-receipt record without teaching holders to interact with an unsolicited asset.
+
+If burning were approved in a future specification revision, that revision would need to redefine:
 
 - whether a burned address may be notified again;
 - whether historical receipt requires a separate `wasNotified` mapping;
@@ -252,58 +275,124 @@ If burning were approved later, the specification would need to redefine:
 - whether burning is transferable movement to the zero address;
 - how operations reports distinguish issued, held, and burned notices.
 
-No burn behavior is approved in this draft.
+The proposed absence of burn behavior remains subject to maintainer approval.
 
 ## 13. Administrative model
 
 The contract requires the minimum authority necessary to distribute notices and finalize distribution.
 
-Proposed model:
+### Contract-level authority
 
-- **PROPOSED:** One clearly defined distribution authority.
-- **PROPOSED:** The same authority can finalize.
-- **PROPOSED:** The initial authority is supplied explicitly and cannot be the zero address.
-- **PROPOSED:** Production authority is expected to be an Augur-controlled Safe.
-- **CONFIRMED:** No personal hot wallet should retain production control.
-- **CONFIRMED:** No hidden secondary administrator or deployer privilege may remain after an approved handoff.
-- **CONFIRMED:** Overlapping owner, admin, minter, and operator systems are not permitted without an approved need.
+**PROPOSED:** One immutable authority address.
 
-Unresolved decisions:
+The authority:
 
-- **UNRESOLVED:** Whether the authority primitive is `Ownable`, `Ownable2Step`, or a custom minimal mechanism.
-- **UNRESOLVED:** Whether authority transfer is supported before finalization.
-- **UNRESOLVED:** Whether authority transfer is possible after finalization.
-- **UNRESOLVED:** Whether ownership is renounced or merely rendered powerless after finalization.
-- **UNRESOLVED:** Whether finalization clears the stored authority.
-- **UNRESOLVED:** Whether the Safe deploys directly or receives authority through a handoff.
+- is supplied explicitly during deployment;
+- cannot be the zero address;
+- may call `distribute` while distribution is active;
+- may call `finalize`;
+- cannot be changed or transferred;
+- cannot nominate a successor;
+- cannot create secondary administrators;
+- cannot restore its powers after finalization.
 
-Conservative proposed behavior:
+The proposed design has no `Ownable`, `Ownable2Step`, `transferOwnership`, `acceptOwnership`, `renounceOwnership`, `setAuthority`, pending-authority state, role-based access control, or overlapping owner, minter, operator, or finalizer roles.
 
-- permit an explicitly reviewed, two-step handoff before finalization if operationally necessary;
-- reject invalid or zero-address authority transitions;
-- freeze authority changes after finalization;
-- retain the final authority address as an audit record rather than automatically renouncing or clearing it;
-- make finalization, not ownership renunciation, the irreversible mechanism that disables distribution.
+Rationale:
 
-This behavior remains **PROPOSED**. The specification does not select an implementation library.
+- removes authority-transfer and wrong-address handoff failure modes;
+- removes pending-owner state and recovery-administrator ambiguity;
+- avoids mutable contract-level governance;
+- reduces bytecode, test, and review surface;
+- fails closed if the authority becomes unavailable.
+
+Trade-off:
+
+- an incorrectly configured or permanently unavailable authority cannot be recovered in place;
+- the candidate would need to be abandoned or redeployed;
+- this is considered an acceptable proposed trade-off for a non-custodial communications artifact;
+- authority correctness must therefore be independently verified before deployment.
+
+The immutable-authority design remains **PROPOSED** pending approval. Exact Solidity implementation remains **DEFERRED**.
+
+### Deployer and authority separation
+
+The deployer and authority are separate concepts:
+
+```text
+Deployer:
+- submits the deployment transaction;
+- receives no persistent permission unless deliberately supplied as authority.
+
+Authority:
+- distributes notices;
+- finalizes distribution;
+- is immutable.
+```
+
+The constructor receives the intended authority address. The deployer does not need temporary administrative privilege, no post-deployment authority handoff is required, and deployment alone creates no hidden privilege.
+
+### Production-controller policy
+
+**PROPOSED operational requirement:**
+
+> The production authority must be a dedicated, maintainer-approved address whose ownership, signer model, security assumptions, configuration, and incident procedures are documented and reviewed before deployment.
+
+The current expected arrangement is:
+
+- the project maintainer currently expects to operate the production authority;
+- the authority should not be the maintainer's normal everyday wallet;
+- the authority should not be a browser hot wallet used for unrelated activity;
+- the preferred arrangement is a dedicated Safe;
+- the Safe may initially be controlled by one dedicated signer;
+- a one-owner, one-signature Safe must not be described as providing multisignature security;
+- its initial benefits are address stability, transaction review, separation from daily activity, and future signer rotation;
+- additional independent signers and a higher threshold should be evaluated before mainnet;
+- the exact Safe address, owners, threshold, modules, guard, fallback handler, and recovery process remain **DEFERRED** operational decisions.
+
+This draft does not claim organizational Augur control and does not invent other signers.
+
+Using a Safe does not automatically eliminate operational risk. Future deployment review must verify the chain, Safe address, owners, threshold, signer independence, enabled modules, guard, fallback handler, signer key-storage method, recovery procedure, transaction simulation, dedicated-purpose status, and unrelated asset or protocol activity. These are **DEFERRED** operational requirements.
 
 ## 14. Distribution functions
 
-**PROPOSED:** Expose both:
-
-- one single-recipient distribution operation for controlled testing, canary activity, and intentionally isolated distribution; and
-- one bounded batch distribution operation for normal distribution.
-
-Conceptual operations:
+**PROPOSED:** Expose one conceptual operation:
 
 ```text
-distribute(recipient)
-distributeBatch(recipients)
+distribute(address[] recipients)
 ```
 
-These are behavioral descriptions, not approved Solidity signatures.
+The same operation supports one-address canaries and normal multi-address batches through one authorization path, validation path, event policy, and atomicity policy.
 
-Both operations must use identical recipient validation and supply semantics. The batch maximum is **DEFERRED** until gas and calldata measurements are available. The specification must not guess a number. Once measured, the selected limit must leave a documented safety margin below relevant block gas and transaction constraints.
+The minimum length is one. Empty arrays revert. The maximum length is **DEFERRED** until measured gas and calldata testing can support an approved limit with documented safety margin. This is a behavioral description, not an approved exact Solidity signature or implementation.
+
+### Immutable issuance cap
+
+**PROPOSED:** The contract has an immutable `distributionCap`.
+
+Conceptually, distribution rejects an operation when:
+
+```text
+totalSupply + recipients.length > distributionCap
+```
+
+Rationale:
+
+- places a hard upper bound on authority misuse;
+- prevents unlimited spam issuance;
+- makes the campaign's maximum scale inspectable;
+- provides an additional reconciliation constraint;
+- reduces damage if the authority is compromised.
+
+Limitations:
+
+- the cap does not prove recipient correctness;
+- a compromised authority may still issue the capped supply to incorrect addresses;
+- a cap that is too low may require a new deployment;
+- the cap must not be guessed;
+- the cap does not replace off-chain recipient validation.
+
+The existence of an immutable issuance cap is **PROPOSED**. Its exact numeric value is **DEFERRED**. The derivation policy remains **UNRESOLVED**; the proposed source is an approved recipient manifest or approved conservative upper bound. Zero-cap validity is **UNRESOLVED**; if zero is not allowed, construction must reject it. Reaching the cap does not automatically finalize distribution. Explicit finalization remains required.
 
 ## 15. Recipient validation
 
@@ -314,8 +403,9 @@ Both operations must use identical recipient validation and supply semantics. Th
 | Duplicate inside one batch | **PROPOSED** | Revert the complete batch |
 | Unauthorized caller | **CONFIRMED** | Revert |
 | Distribution after finalization | **CONFIRMED** | Revert |
-| Empty batch | **PROPOSED** | Revert |
+| Empty recipient array | **PROPOSED** | Revert |
 | Batch above approved maximum | **PROPOSED** | Revert once a maximum is defined |
+| Distribution above immutable cap | **PROPOSED** | Revert |
 | Valid smart-contract address | **PROPOSED** | Technically permitted on-chain |
 
 The contract should not attempt to distinguish EOAs from contracts. EOA/contract eligibility is **DEFERRED** to the off-chain pipeline because:
@@ -331,6 +421,8 @@ The contract should not attempt to distinguish EOAs from contracts. EOA/contract
 
 One invalid recipient causes the complete batch to revert.
 
+Ethereum transaction atomicity ensures that any earlier balance, supply, or event-producing changes attempted within the same failed call are rolled back. No state or event from the reverted distribution persists.
+
 Advantages:
 
 - deterministic reconciliation;
@@ -345,7 +437,7 @@ Trade-off:
 
 - one malformed, zero, duplicate, previously notified, or otherwise invalid recipient blocks the whole batch.
 
-The off-chain pipeline must therefore validate manifests before transaction construction. Partial-success semantics are not currently preferred.
+The off-chain pipeline must therefore validate manifests before transaction construction. There is no silent skipping, partial success, best-effort behavior, or idempotent duplicate handling.
 
 ## 17. Duplicate semantics
 
@@ -373,6 +465,7 @@ Proposed behavior:
 
 - **CONFIRMED:** Only the approved authority can finalize.
 - **PROPOSED:** Finalization is a distinct explicit operation.
+- **PROPOSED:** Finalization is one-time and repeated calls revert.
 - **PROPOSED:** Successful finalization emits an event.
 - **CONFIRMED:** Finalization is irreversible.
 - **CONFIRMED:** Every distribution and mint path is permanently disabled afterward.
@@ -380,16 +473,11 @@ Proposed behavior:
 - **CONFIRMED:** Transfers and approvals remain disabled.
 - **CONFIRMED:** No emergency unfinalize function exists.
 - **CONFIRMED:** No upgrade mechanism can bypass finalization.
-
-Conservative proposed defaults:
-
-- **PROPOSED:** A repeated finalization call reverts with an explicit already-finalized failure.
-- **PROPOSED:** Authority transfer after finalization reverts.
-- **PROPOSED:** Finalization does not automatically renounce or clear the recorded authority.
+- **PROPOSED:** Finalization below the immutable cap is valid.
 - **PROPOSED:** No separate finalization timestamp or block number is stored.
-- **PROPOSED:** The finalization event and transaction receipt provide timing information.
+- **PROPOSED:** Event block and transaction metadata provide timing information.
 
-The repeated-call behavior, post-finalization authority behavior, authority clearing, and stored timing data remain **UNRESOLVED** until approved.
+Because authority is immutable, there is no authority transfer, clearing, ownership renunciation, or later authority change to resolve after finalization. The authority address remains publicly readable as an audit record, but after finalization it has no effective contract power. Finalization, not ownership renunciation, permanently disables privileged behavior.
 
 ## 19. External interaction policy
 
@@ -416,41 +504,32 @@ The contract exposes no intended ETH-receive or withdrawal path and does not rel
 
 ## 20. Events
 
-### `NoticeDistributed`
+### Standard issuance event
 
-| Property | Proposed definition |
-| --- | --- |
-| Status | **PROPOSED** |
-| Fields | Recipient address |
-| Indexed fields | Recipient address |
-| Emission time | Once per recipient after that recipient's notice balance and supply accounting are successfully updated |
-| Reconciliation purpose | Links a successful state change to a recipient and permits event-count comparison with manifests |
-| Failure behavior | Not emitted persistently for reverted operations |
+**PROPOSED:** Every successful issuance emits the familiar mint-style event:
 
-### `DistributionFinalized`
+```solidity
+Transfer(address(0), recipient, 1)
+```
 
-| Property | Proposed definition |
-| --- | --- |
-| Status | **PROPOSED** |
-| Fields | None required under the proposed minimal design |
-| Indexed fields | None |
-| Emission time | After finalized state is successfully set |
-| Reconciliation purpose | Identifies the transaction and block that permanently ended distribution |
-| Failure behavior | Not emitted persistently for reverted operations |
+One event is emitted per successful recipient. This supports standard explorer and indexer behavior. Because ordinary movement is impossible, every persistent `Transfer` event is unambiguously an issuance event. Reverted distributions leave no persistent event record.
 
-### Conditional standard ERC-20 events
+A duplicate custom per-recipient event is not proposed by default. It should be added only if a concrete indexing requirement justifies duplicated gas and event surface.
 
-If ERC-20 compatibility is approved:
+### Finalization event
 
-- **PROPOSED:** Each successful issuance also emits the standard `Transfer` event from the zero address to the recipient for one unit.
-- **PROPOSED:** Reverted issuance emits no persistent `Transfer` event.
-- **PROPOSED:** Disabled approval calls emit no `Approval` event.
+**PROPOSED concept:**
 
-The proposed custom notice event and standard issuance event serve different purposes: `NoticeDistributed` communicates product semantics, while `Transfer` supports standard token-indexing expectations. Whether both are required remains part of the **UNRESOLVED** event decision.
+```solidity
+DistributionFinalized(
+    address indexed authority,
+    uint256 finalSupply
+)
+```
 
-If authority transfer is approved, an accurate administrative-transition event is required. Its exact fields are **UNRESOLVED**.
+The semantic requirement is one successful finalization event identifying the immutable authority and accurate final supply. Exact Solidity syntax remains **DEFERRED** until implementation design.
 
-Batch identifiers are not currently proposed. Transaction hashes, reviewed manifests, and one event per recipient may be sufficient. A batch identifier should be added only if operations review shows it materially improves reconciliation without creating conflicting sources of truth.
+A batch-level manifest hash or batch identifier remains **UNRESOLVED** and must not be added automatically.
 
 ## 21. Public read interface
 
@@ -462,13 +541,13 @@ Likely minimum read surface:
 | Symbol | **PROPOSED** | Standard metadata |
 | Decimals | **PROPOSED** | Standard metadata; proposed value `0` |
 | `balanceOf(address)` | **PROPOSED** | Determine whether the address currently holds its notice |
-| Total supply | **PROPOSED** | Reconcile successful unique recipients while burning is disabled |
+| Total supply | **PROPOSED** | Reconcile successful unique recipients |
+| `allowance(owner, spender)` | **PROPOSED** | Always return zero |
+| Immutable authority | **PROPOSED** | Verify the address permitted to distribute before finalization |
 | Finalized state | **PROPOSED** | Verify whether distribution is permanently closed |
-| Current/final authority | **PROPOSED** | Verify administrative control or retained audit record |
-| `allowance(owner, spender)` | **PROPOSED** if ERC-20 compatibility is approved | Return zero under disabled approval semantics |
-| Separate `wasNotified(address)` | **UNRESOLVED** | Potentially redundant while balances cannot move or burn |
+| Immutable distribution cap | **PROPOSED** | Verify the maximum possible total supply |
 
-The proposed preference is to omit `wasNotified(address)` because `balanceOf(address) == 1` conveys the same fact while transfers and burns are disabled. If burn or movement semantics change, a separate historical record may become necessary.
+No separate `wasNotified(address)` view is proposed. While transfers and burns are disabled and balances remain binary, `balanceOf(address) == 1` is sufficient to determine current and historical direct notice receipt.
 
 Public functions must not exist solely for test convenience.
 
@@ -483,12 +562,13 @@ The implementation should distinguish these semantic conditions:
 - duplicate recipient within the submitted operation;
 - already-notified recipient;
 - distribution already finalized;
-- empty batch;
+- empty recipient array;
 - oversized batch;
+- distribution cap exceeded;
 - transfer disabled;
 - approvals disabled;
 - finalization already completed;
-- invalid authority transition, if authority transfer is supported.
+- invalid authority or distribution-cap construction parameter.
 
 Exact custom-error names and parameter lists are **UNRESOLVED** implementation details. The approved semantics must remain testable and unambiguous.
 
@@ -496,124 +576,143 @@ Exact custom-error names and parameter lists are **UNRESOLVED** implementation d
 
 These invariants are mandatory acceptance properties for any implementation of the approved design.
 
-### Balance invariants
+### Balance and supply invariants
 
+- **PROPOSED:** Initial supply is zero.
+- **PROPOSED:** Each successful recipient receives exactly one unit.
 - **CONFIRMED:** No address holds more than one notice.
 - **CONFIRMED:** The zero address never receives a notice.
-- **PROPOSED:** Successful distribution changes the recipient balance from zero to one.
-- **CONFIRMED:** Failed distribution does not alter balances.
-- **PROPOSED:** Total supply equals unique successfully notified addresses while burning remains disabled.
+- **PROPOSED:** Total supply equals unique successful recipients.
+- **PROPOSED:** Total supply never exceeds the immutable distribution cap.
+- **CONFIRMED:** Failed transactions do not alter balances or supply.
 - **CONFIRMED:** Notice balances cannot move between addresses.
+- **PROPOSED:** Notice balances cannot be burned.
+- **CONFIRMED:** Finalization preserves all existing balances.
+
+### Distribution invariants
+
+- **CONFIRMED:** Only the approved authority can distribute.
+- **PROPOSED:** Distribution accepts one or more recipients.
+- **PROPOSED:** Empty recipient arrays fail.
+- **PROPOSED:** Invalid, duplicate, or previously notified recipients cause complete transaction failure.
+- **PROPOSED:** No partial batch succeeds.
+- **CONFIRMED:** Distribution after finalization always fails.
+- **PROPOSED:** Distribution above the immutable cap always fails.
 
 ### Authority invariants
 
-- **CONFIRMED:** Only the approved authority can distribute.
+- **PROPOSED:** Authority is nonzero and immutable.
+- **PROPOSED:** Deployment creates no implicit deployer privilege unless the deployer is explicitly supplied as authority.
+- **PROPOSED:** No authority-transfer path exists.
+- **CONFIRMED:** No secondary privileged role exists.
 - **CONFIRMED:** Only the approved authority can finalize.
 - **CONFIRMED:** Unauthorized actions cannot modify state.
-- **CONFIRMED:** No hidden deployer privilege remains after an approved authority handoff.
 - **CONFIRMED:** Finalization cannot be reversed.
-- **CONFIRMED:** Distribution authority cannot be restored after finalization.
+- **CONFIRMED:** Finalization permanently removes all effective authority powers.
+
+### Interface invariants
+
+- **PROPOSED:** `transfer` always fails, including for zero value.
+- **PROPOSED:** `transferFrom` always fails.
+- **PROPOSED:** `approve` always fails.
+- **PROPOSED:** `allowance` always reports zero.
+- **PROPOSED:** Permit and burn functions are absent.
+- **CONFIRMED:** No movement can be enabled through another path.
 
 ### Value-safety invariants
 
-- **CONFIRMED:** The contract cannot transfer REP.
-- **CONFIRMED:** The contract cannot approve REP.
+- **CONFIRMED:** No REP interaction exists.
 - **CONFIRMED:** The contract exposes no intended ETH-receive path.
 - **CONFIRMED:** The contract exposes no ETH-withdrawal path.
 - **CONFIRMED:** The contract cannot execute arbitrary external calls.
-- **CONFIRMED:** Notice approvals cannot enable token movement.
 - **CONFIRMED:** No upgrade path exists.
+- **CONFIRMED:** No mechanism can restore distribution after finalization.
 
-### Operational invariants
+### Event invariants
 
-- **PROPOSED:** A successful batch emits one notice event per recipient.
-- **PROPOSED:** If ERC-20 compatibility is approved, a successful batch also emits the standard issuance event once per recipient.
-- **PROPOSED:** A reverted batch emits no persistent notice events.
-- **PROPOSED:** A reverted batch emits no persistent standard issuance events.
-- **PROPOSED:** A successful batch increases total supply by exactly its recipient count.
-- **CONFIRMED:** A repeated recipient cannot increase total supply.
-- **CONFIRMED:** Finalization preserves all existing balances.
+- **PROPOSED:** Every successful issuance emits one standard mint-style issuance event.
+- **PROPOSED:** Reverted distributions produce no persistent issuance events.
+- **PROPOSED:** Successful distribution increases supply by exactly the recipient count.
+- **PROPOSED:** Finalization emits one finalization event containing the accurate final supply.
 
 ## 24. Acceptance criteria
 
 All boxes remain unchecked because the specification and implementation are not approved.
 
-### Construction and metadata
+### Construction
 
 - [ ] Final approved name is returned.
 - [ ] Final approved symbol is returned.
 - [ ] Decimals are zero if the proposed default is approved.
 - [ ] Initial total supply is zero.
-- [ ] Initial authority is correct.
-- [ ] Zero-address initial authority fails.
-- [ ] Distribution is initially active.
+- [ ] Immutable authority is the configured nonzero address.
+- [ ] Zero authority is rejected.
+- [ ] Proposed immutable distribution cap is configured.
+- [ ] Invalid cap is rejected if the approved design disallows zero.
+- [ ] Distribution is not finalized initially.
 
-### Single distribution
+### Distribution
 
-- [ ] Authorized distribution succeeds.
-- [ ] Recipient receives exactly one unit.
-- [ ] Total supply increases by one.
-- [ ] Correct notice event is emitted.
-- [ ] Conditional standard issuance event behavior matches the approved interface.
-- [ ] Zero address fails.
-- [ ] Repeated recipient fails.
-- [ ] Unauthorized caller fails.
+- [ ] A one-recipient array succeeds.
+- [ ] A valid multi-recipient array succeeds.
+- [ ] Every successful recipient receives exactly one unit.
+- [ ] Empty arrays revert.
+- [ ] A zero address reverts the complete operation.
+- [ ] A duplicate inside the array reverts the complete operation.
+- [ ] A previously notified recipient reverts the complete operation.
+- [ ] Unauthorized callers revert.
+- [ ] Supply accounting exactly matches successful recipients.
+- [ ] One exact standard issuance event is emitted per successful recipient.
+- [ ] Distribution at the cap succeeds.
+- [ ] Distribution beyond the cap reverts atomically.
+- [ ] No failed distribution leaves partial balances, supply, or events.
+- [ ] An oversized batch fails once a maximum is approved.
 
-### Batch distribution
+### Authority
 
-- [ ] A valid batch succeeds.
-- [ ] Every recipient receives one unit.
-- [ ] Total supply increases by the batch size.
-- [ ] Events contain the correct recipients.
-- [ ] Empty-batch behavior matches the approved specification.
-- [ ] A duplicate inside the batch fails.
-- [ ] A previously notified recipient fails.
-- [ ] A zero address inside the batch fails.
-- [ ] An oversized batch fails once a limit exists.
-- [ ] Any invalid recipient causes no partial state change.
+- [ ] Authority is immutable.
+- [ ] No authority-transfer method exists.
+- [ ] Deployer has no implicit privilege.
+- [ ] Controller type does not alter contract semantics.
+- [ ] Only authority can distribute.
+- [ ] Only authority can finalize.
 
-### Non-transferability and approvals
+### Movement and approval
 
-- [ ] `transfer` fails.
-- [ ] `transferFrom` fails.
-- [ ] Approval cannot enable movement.
-- [ ] Allowance cannot produce transferable authority.
-- [ ] Permit is unavailable.
-- [ ] Allowance helper behavior matches the approved interface.
-- [ ] Burn behavior matches the approved decision.
+- [ ] Positive-value `transfer` reverts.
+- [ ] Zero-value `transfer` reverts.
+- [ ] `transferFrom` reverts.
+- [ ] `approve` reverts.
+- [ ] `allowance` remains zero.
+- [ ] Permit is absent.
+- [ ] Burn is absent.
 
 ### Finalization
 
 - [ ] Authorized finalization succeeds.
 - [ ] Unauthorized finalization fails.
-- [ ] Finalization event is emitted.
-- [ ] Finalized state becomes true.
-- [ ] Finalization cannot be reversed.
-- [ ] Distribution after finalization fails.
+- [ ] Repeated finalization fails.
+- [ ] Distribution afterward fails.
 - [ ] Existing balances remain.
-- [ ] Transfers remain disabled.
-- [ ] Approvals remain disabled.
-- [ ] Repeated finalization behavior matches the approved specification.
+- [ ] Authority address remains readable.
+- [ ] Authority has no effective post-finalization power.
+- [ ] Final supply is emitted accurately.
+- [ ] Finalization below the cap remains valid.
 
-### Authority
+### Architecture
 
-- [ ] Authority transfer behavior matches the approved specification.
-- [ ] Invalid authority transfer fails.
-- [ ] Deployer retains no unintended privilege.
-- [ ] The production Safe can perform approved actions in simulation and authorized test environments.
-- [ ] Authority behavior after finalization matches the approved specification.
-
-### Interface and safety
-
-- [ ] No payable function exists.
-- [ ] No arbitrary-call capability exists.
-- [ ] No REP interaction exists.
-- [ ] No proxy or upgrade mechanism exists.
+- [ ] No external-call capability exists.
+- [ ] No REP dependency exists.
+- [ ] No payable interface exists.
+- [ ] No ETH withdrawal exists.
+- [ ] No proxy exists.
+- [ ] No upgrade mechanism exists.
+- [ ] No delegatecall exists.
+- [ ] No unexpected administrative role exists.
 - [ ] Bytecode remains within applicable size limits.
 - [ ] Source compiles with the pinned Solidity version.
 - [ ] Static analysis has no unexplained critical findings.
-- [ ] Unit tests cover every approved behavior.
-- [ ] Fuzz and invariant tests exercise mandatory security properties.
+- [ ] Unit, fuzz, and invariant tests cover every approved behavior.
 - [ ] This work receives the required independent review before a release gate advances.
 
 ## 25. Explicit non-goals
@@ -655,6 +754,7 @@ The following are **DEFERRED**, not forgotten:
 - manual exclusions and approval evidence;
 - contract-address eligibility;
 - canonical sorting;
+- immutable distribution-cap value and supporting evidence;
 - batch manifest format;
 - artifact checksums;
 - canary list;
@@ -689,7 +789,7 @@ Final user-facing wording, canonical migration URL, publication plan, and incide
 | Alternative | Advantages | Disadvantages and implications | Current disposition |
 | --- | --- | --- | --- |
 | Standard transferable ERC-20 | Maximum compatibility with token tooling | Creates movement, approval, market, scam, and accounting risks that contradict the notice meaning | **OUT OF SCOPE** |
-| Non-transferable ERC-20-compatible notice | Familiar balances and metadata; simple one-unit accounting | Transfer/approval selectors still exist and wallet visibility remains uncertain | **PROPOSED** |
+| Non-transferable ERC-20-shaped notice | Familiar balances, supply, metadata, and selectors; simple one-unit accounting | Deliberately rejects movement and approvals, differs from strict ERC-20 behavior, and does not guarantee wallet visibility | **PROPOSED** |
 | ERC-721 | Unique receipt semantics; broad NFT tooling | Token IDs, URI systems, transfer/operator approvals, and NFT spam treatment add complexity | Not preferred; **OUT OF SCOPE** under current constraints |
 | ERC-1155 | Efficient standardized batch semantics | Multi-token and operator-approval surface is unnecessary | Not preferred; **OUT OF SCOPE** |
 | Event-only approach | Minimal state and no token balance | Poor visibility in normal wallet asset views; harder holder-facing persistence | Considered, not currently preferred |
@@ -704,30 +804,30 @@ Every item below requires explicit approval or rejection before implementation.
 
 | Decision | Proposed default | Rationale | Security implication | Current status |
 | --- | --- | --- | --- | --- |
-| ERC-20 compatibility approved? | Yes, with movement and approvals disabled | Best available standard balance/metadata compatibility | Exposes familiar selectors that must reliably revert | **UNRESOLVED** |
+| ERC-20-shaped interface approved? | Yes, without claiming full behavioral compliance | Best available familiar balance, supply, metadata, and selector surface for compatibility testing | Integrations may assume transferability; movement and approval selectors must reliably revert | **UNRESOLVED** |
 | Final token name? | No proposal in this draft | Avoid inventing branding or misleading wording | A poor name can imply value or migrated REP | **UNRESOLVED** |
 | Final symbol? | No proposal in this draft | Avoid ticker confusion | Copyable or REP-like symbols increase impersonation risk | **UNRESOLVED** |
 | Zero decimals approved? | `0` | One indivisible notice | Simplifies accounting and avoids fractional interpretations | **UNRESOLVED** |
 | One unit per recipient approved? | `1` | Binary receipt state | Supports balance and supply invariants | **UNRESOLVED** |
+| Movement and approval reverts approved? | Revert every `transfer`, `transferFrom`, and `approve`; return zero allowance | Preserves notice-only behavior while retaining familiar selectors | Deliberately differs from strict ERC-20 behavior and must be tested across tooling | **UNRESOLVED** |
 | Burn disabled? | Yes | Preserves balances and reconciliation | Enabling burn weakens historical and supply invariants | **UNRESOLVED** |
-| Single distribution function needed? | Yes | Controlled canary and intentionally isolated distribution | Adds a small callable surface that must share all validation | **UNRESOLVED** |
-| Batch function needed? | Yes | Operational efficiency | Loops and batch validation require gas and atomicity testing | **UNRESOLVED** |
-| Empty batch behavior? | Revert | Detects malformed operations | Explicit failure avoids misleading success | **UNRESOLVED** |
-| Duplicate behavior? | Revert | Exposes manifest errors | Prevents silent supply/event divergence | **UNRESOLVED** |
-| All-or-nothing batch semantics? | Yes | Deterministic reconciliation | One bad entry blocks a batch, requiring strong prevalidation | **UNRESOLVED** |
-| Administrative primitive? | One authority with reviewed two-step handoff if needed; library undecided | Minimizes roles while reducing wrong-address handoff risk | Primitive correctness governs all privileged behavior | **UNRESOLVED** |
-| Authority transfer allowed? | Before finalization only | Supports deployer-to-Safe handoff without permanent mutability | Transfer is an additional privileged state transition | **UNRESOLVED** |
-| Authority behavior after finalization? | Freeze changes; retain address as audit record | Finalization should be the disabling mechanism | Prevents post-finalization control ambiguity | **UNRESOLVED** |
+| One array-based distribution operation approved? | `distribute(address[] recipients)` for canaries and batches | One authorization, validation, event, and atomicity path | Array handling and gas limits require careful testing | **UNRESOLVED** |
+| Strict atomic batch semantics approved? | Yes; every invalid entry reverts the complete operation | Deterministic reconciliation and no silent skipping | One bad entry blocks a batch, requiring strong prevalidation | **UNRESOLVED** |
+| Immutable authority approved? | One nonzero constructor-supplied immutable authority with no transfer path | Removes handoff, pending-owner, and mutable-governance surface | Misconfiguration or loss requires abandonment or redeployment | **UNRESOLVED** |
+| Immutable issuance cap approved? | Yes | Bounds authority misuse and campaign scale | Does not prove recipient correctness and may force redeployment if too low | **UNRESOLVED** |
+| Exact issuance-cap derivation? | Approved recipient manifest or approved conservative upper bound | Cap must be evidence-based rather than guessed | Wrong derivation can permit excess issuance or block intended recipients | **UNRESOLVED** |
 | Repeated finalization behavior? | Revert | Explicitly reports an invalid repeated action | Avoids silent no-op assumptions in operations | **UNRESOLVED** |
 | Finalization timestamp stored? | No; use event transaction/block metadata | Avoids redundant storage | Reviewers must rely on canonical chain history for timing | **UNRESOLVED** |
-| Required events? | One indexed notice event and, if ERC-20 compatibility is approved, one standard issuance event per recipient; one finalization event | Supports direct reconciliation and standard indexing | Missing, redundant, or misleading events can impair operational verification | **UNRESOLVED** |
-| Separate `wasNotified` view? | No while burn and transfer remain disabled | `balanceOf == 1` is equivalent | Adding redundant state/function surface increases complexity | **UNRESOLVED** |
+| Required events? | One standard mint-style issuance event per recipient and one finalization event with authority and final supply | Supports standard indexing and direct reconciliation without duplicate per-recipient events | Missing, redundant, or misleading events can impair operational verification | **UNRESOLVED** |
+| Batch manifest hash or identifier? | No default | Avoid conflicting sources of truth unless operations demonstrates a need | Omitting it relies on transaction, manifest, and checksum discipline | **UNRESOLVED** |
 | Maximum batch size determined later through gas testing? | Yes | A safe limit must be measured, not guessed | Oversized batches can fail or reduce operational margin | **UNRESOLVED** |
-| Production authority expected to be a Safe? | Yes | Avoids personal hot-wallet control | Safe configuration and signer compromise remain operational risks | **UNRESOLVED** |
+| Final production-controller arrangement? | Dedicated maintainer-approved controller; dedicated Safe preferred | Separates campaign authority from daily activity and enables reviewable control | Controller compromise, loss, or misconfiguration can misuse or halt capped issuance | **UNRESOLVED** |
+| Mainnet signer set and threshold? | Evaluate independent signers and a higher threshold before mainnet | A one-owner Safe is not multisignature security | Signer compromise, loss, and coordination remain operational risks | **UNRESOLVED** |
 | Independent review requirement? | Yes | Security-sensitive contract and operations | Self-review is insufficient for release gating | **UNRESOLVED** |
 | Sepolia wallet-display test requirement? | Yes | Wallet visibility is an empirical hypothesis | Findings may expose confusion or spam-classification risks before mainnet | **UNRESOLVED** |
+| Communications wording and canonical publication plan? | Notice-only wording and contract-address verification through official surfaces | Metadata alone cannot authenticate the deployment | Inconsistent or misleading publication increases phishing and impersonation risk | **UNRESOLVED** |
 
-Additional decisions remain for finalization triggers, Safe address, deployment method, canonical communications, and all deferred recipient-pipeline inputs.
+Additional decisions remain for finalization triggers, exact Safe configuration and recovery, deployment method, and all deferred recipient-pipeline inputs.
 
 ## 30. Approval
 
@@ -737,9 +837,11 @@ Required before implementation:
 
 - [ ] Product behavior approved
 - [ ] Administrative model approved
+- [ ] ERC-20-shaped interface boundary approved
 - [ ] Transfer and approval semantics approved
 - [ ] Burn semantics approved
-- [ ] Batch and duplicate semantics approved
+- [ ] Array distribution, cap, and atomic batch semantics approved
+- [ ] Event policy approved
 - [ ] Finalization semantics approved
 - [ ] Security invariants approved
 - [ ] Acceptance criteria approved

@@ -14,7 +14,7 @@ Foundation and reproducibility are complete. Product specification is in progres
 - Objective: Define the notice's exact meaning and product behavior without implementing it.
 - Deliverables: Reviewable contract behavior, metadata constraints, authority and finalization proposals, security invariants, acceptance criteria, and open maintainer decisions.
 - Entry conditions: Phase 1 complete.
-- Exit conditions: Maintainers approve [`docs/product/SPEC.md`](../product/SPEC.md) with no unresolved contract-level ambiguity.
+- Exit conditions: Maintainers approve [`docs/product/SPEC.md`](../product/SPEC.md), including the interface compatibility boundary, immutable authority, production-controller policy, immutable issuance cap, atomic array-batch semantics, finalization semantics, event policy, and token metadata, with no unresolved contract-level ambiguity.
 - Non-goals: Contract implementation, tests, recipient extraction, RPC access, or deployment.
 
 ## 3. Threat model and acceptance criteria — Not started
@@ -28,7 +28,7 @@ Foundation and reproducibility are complete. Product specification is in progres
 ## 4. Minimal contract implementation — Not started
 
 - Objective: Implement only the approved notice behavior.
-- Deliverables: One short production contract with approved authorization, unique distribution, non-transferability, and finalization behavior.
+- Deliverables: One short production contract with approved immutable authorization, capped unique distribution, non-transferability, event, and finalization behavior.
 - Entry conditions: Phases 2 and 3 complete.
 - Exit conditions: Implementation matches the approved specification and compiles without unresolved warnings.
 - Non-goals: Snapshot tooling, deployment, upgradeability, callbacks, claims, or generalized frameworks.
@@ -60,7 +60,7 @@ Foundation and reproducibility are complete. Product specification is in progres
 ## 8. Sepolia and wallet-display testing — Not started
 
 - Objective: Empirically test deployment operations and wallet presentation.
-- Deliverables: Verified Sepolia deployment records, authority handoff, distribution, finalization, and wallet observations.
+- Deliverables: Verified Sepolia deployment records, immutable controller configuration, distribution, finalization, and wallet observations.
 - Entry conditions: Explicit maintainer authorization and all prior local gates complete.
 - Exit conditions: Testnet behavior and communications risks are reviewed.
 - Non-goals: Mainnet execution or promises of wallet visibility.

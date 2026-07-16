@@ -22,15 +22,42 @@ This runbook is reserved for future human-controlled deployment preparation. It 
 - [ ] Creation bytecode hash recorded
 - [ ] Runtime bytecode hash recorded
 - [ ] Constructor arguments recorded
+- [ ] Immutable authority argument recorded
+- [ ] Immutable distribution-cap argument and evidence recorded
 
 ## Environment verification
 
 - [ ] Network name confirmed
 - [ ] Chain ID confirmed
 - [ ] Snapshot block confirmed
-- [ ] Intended authority confirmed
-- [ ] Intended Safe confirmed
-- [ ] Deployer role and removal plan confirmed
+- [ ] Intended immutable authority confirmed
+- [ ] Deployer and authority separation confirmed
+- [ ] Deployer receives no implicit contract privilege
+
+## Future authority and controller review
+
+These are unapproved future deployment gates. They do not establish a controller address or approve a Safe configuration.
+
+- [ ] Intended chain confirmed
+- [ ] Immutable authority address confirmed
+- [ ] Authority address checksum independently reviewed
+- [ ] Controller type documented
+- [ ] Safe address confirmed, if applicable
+- [ ] Safe owners verified, if applicable
+- [ ] Safe threshold verified, if applicable
+- [ ] Signer independence assessed
+- [ ] Enabled modules reviewed
+- [ ] Guard configuration reviewed
+- [ ] Fallback handler reviewed
+- [ ] Signer key-storage method reviewed
+- [ ] Recovery plan documented
+- [ ] Dedicated-purpose use confirmed
+- [ ] Unrelated assets and protocol activity reviewed
+- [ ] Constructor arguments independently reviewed
+- [ ] Deployer and authority separation reviewed
+- [ ] Issuance-cap value and supporting evidence reviewed
+- [ ] Controller transaction simulation reviewed
+- [ ] Finalization authority and procedure reviewed
 
 ## Pre-deployment simulation
 
@@ -38,7 +65,8 @@ This runbook is reserved for future human-controlled deployment preparation. It 
 - [ ] Static-analysis findings reviewed
 - [ ] Pinned fork simulation passed
 - [ ] Gas assumptions reviewed
-- [ ] Authority handoff simulated
+- [ ] Immutable authority constructor configuration simulated
+- [ ] Distribution-cap boundary behavior simulated
 - [ ] Distribution batches simulated
 - [ ] Finalization simulated
 - [ ] Post-finalization behavior simulated
@@ -47,10 +75,9 @@ This runbook is reserved for future human-controlled deployment preparation. It 
 
 - [ ] Deployment target reviewed
 - [ ] Constructor data reviewed
-- [ ] Authority-transfer data reviewed
 - [ ] Batch data reviewed
 - [ ] Finalization data reviewed
-- [ ] Safe simulation reviewed
+- [ ] Controller transaction simulation reviewed
 - [ ] Checksums reviewed
 
 ## Human-controlled execution
@@ -74,12 +101,14 @@ This runbook is reserved for future human-controlled deployment preparation. It 
 ## Finalization
 
 - [ ] Every approved batch reconciled
-- [ ] Final authority confirmed
+- [ ] Immutable authority confirmed
 - [ ] Maintainers approved irreversible finalization
 - [ ] Finalization transaction recorded
 - [ ] Further distribution confirmed impossible
 - [ ] Existing balances confirmed preserved
 - [ ] Transfers and approvals confirmed unavailable
+- [ ] Final supply reconciled against the immutable distribution cap
+- [ ] Authority remains readable but has no effective contract power
 
 ## Post-deployment records
 
@@ -89,5 +118,6 @@ This runbook is reserved for future human-controlled deployment preparation. It 
 - [ ] Source-verification status recorded
 - [ ] Runtime bytecode rechecked
 - [ ] Authority state rechecked
+- [ ] Distribution-cap state rechecked
 - [ ] Finalization state recorded
 - [ ] Public verification material reviewed

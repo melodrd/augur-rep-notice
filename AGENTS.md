@@ -322,8 +322,7 @@ Use custom errors where they materially improve clarity and gas usage.
 Use events for meaningful state transitions, including:
 
 - successful distribution;
-- permanent finalization;
-- administrative transfer, if applicable.
+- permanent finalization.
 
 Do not emit misleading events for failed or skipped recipients.
 
@@ -334,20 +333,20 @@ Use the minimum administrative authority necessary.
 Default preference:
 
 - one clearly defined administrative authority;
-- the production authority is an Augur-controlled Safe;
+- the production authority is a dedicated, maintainer-approved address with documented ownership, signer, configuration, and incident assumptions;
+- a dedicated Safe is preferred, but a one-owner, one-signature Safe must not be described as providing multisignature security;
 - no personal hot wallet controls production behavior;
 - no permanent deployer privileges;
 - no hidden secondary admin;
 - no overlapping owner and role systems unless the written specification requires both.
 
-If a temporary deployer is necessary:
+The current draft specification proposes an immutable constructor-supplied authority with no transfer mechanism. Until that proposal is approved:
 
-1. Deploy.
-2. Verify source and constructor arguments.
-3. Transfer authority to the approved Safe.
-4. Confirm the Safe owns the contract.
-5. Confirm the deployer has no remaining privilege.
-6. Record the transfer transaction.
+1. Treat deployer and authority as separate concepts.
+2. Verify the intended authority before deployment.
+3. Do not assume the deployer receives temporary privilege.
+4. Do not plan a post-deployment authority handoff.
+5. Do not claim organizational control without reviewed evidence.
 
 Do not add role-based access control merely because it is available in a library.
 
@@ -456,7 +455,7 @@ The following properties are mandatory unless `docs/product/SPEC.md` explicitly 
 - Only the approved authority can distribute.
 - Only the approved authority can finalize.
 - No unauthorized caller can modify balances.
-- No deployer privilege remains after authority handoff.
+- No deployer privilege exists unless the deployer is explicitly selected as authority.
 - Finalization cannot be reversed.
 - No code path can restore distribution authority after finalization.
 
@@ -647,9 +646,10 @@ Unit tests must cover at least:
 - decimals;
 - initial total supply;
 - initial authority;
-- successful single distribution;
-- successful batch distribution;
+- successful one-recipient array distribution;
+- successful multi-recipient array distribution;
 - zero-address rejection;
+- empty-array rejection;
 - duplicate-address handling;
 - duplicate entries within one batch;
 - duplicates across separate batches;
@@ -662,8 +662,9 @@ Unit tests must cover at least:
 - distribution after finalization;
 - irreversible finalization;
 - supply accounting;
+- immutable distribution-cap accounting, if approved;
 - event contents;
-- authority handoff, if implemented.
+- absence of an authority-transfer path, if immutable authority is approved.
 
 ### 13.3 Fuzz tests
 
@@ -980,7 +981,7 @@ Follow this sequence unless the runbook defines stricter requirements.
 
 - Deploy exact candidate bytecode.
 - Verify source.
-- Test authority handoff.
+- Verify immutable authority configuration.
 - Test distribution.
 - Test finalization.
 - Test wallet presentation.
@@ -1028,7 +1029,8 @@ For every deployed environment, record:
 - contract address;
 - deployment transaction hash;
 - deployer address;
-- final authority address;
+- immutable authority address;
+- immutable distribution cap, if approved;
 - source commit;
 - compiler version;
 - optimizer settings;
@@ -1051,6 +1053,7 @@ Post-deployment checks must confirm:
 - decimals are correct;
 - total supply is correct;
 - authority is correct;
+- distribution cap is correct, if approved;
 - deployer has no unintended authority;
 - transfers fail;
 - approvals fail;
@@ -1109,8 +1112,8 @@ Consider at least:
 ### Operational risks
 
 - wrong network;
-- wrong Safe;
-- wrong owner;
+- wrong authority or controller;
+- wrong Safe owner or threshold, if a Safe is used;
 - wrong constructor values;
 - wrong batch file;
 - repeated batch;
@@ -1365,7 +1368,7 @@ Do not describe the system as ready for a mainnet canary until all gates below a
 ### Gate D: Testnet
 
 - Sepolia deployment verified.
-- Authority handoff tested.
+- Immutable authority configuration verified.
 - Distribution tested.
 - Finalization tested.
 - Wallet-display observations documented.
@@ -1482,9 +1485,10 @@ Do not guess these values:
 
 - final token name;
 - final token symbol;
-- whether any holder-controlled burn function exists;
+- approval of disabled burning;
 - exact authority model;
-- production Safe address;
+- production controller type, address, and Safe configuration if applicable;
+- immutable issuance-cap approval and derivation;
 - REP contract addresses in scope;
 - fork universe or REP versions in scope;
 - definition of successfully migrated;
