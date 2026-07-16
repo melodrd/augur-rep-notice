@@ -10,6 +10,9 @@ contract RepMigrationAlert {
     uint8 private constant _DECIMALS = 0;
     uint256 private constant _UNIT = 1;
 
+    /// @notice The hard maximum number of recipients accepted by one distribution call.
+    uint256 public constant MAX_BATCH_SIZE = 500;
+
     enum AlertStatus {
         NeverAlerted,
         Active,
@@ -31,6 +34,11 @@ contract RepMigrationAlert {
 
     /// @notice Reverts when a distribution contains no recipients.
     error EmptyRecipientArray();
+
+    /// @notice Reverts when a distribution exceeds the hard batch ceiling.
+    /// @param provided The submitted recipient count.
+    /// @param maximum The hard maximum recipient count.
+    error BatchSizeExceeded(uint256 provided, uint256 maximum);
 
     /// @notice Reverts when a recipient is the zero address.
     /// @param index The zero-address recipient's calldata index.
@@ -139,6 +147,9 @@ contract RepMigrationAlert {
         uint256 recipientCount = recipients.length;
         if (recipientCount == 0) {
             revert EmptyRecipientArray();
+        }
+        if (recipientCount > MAX_BATCH_SIZE) {
+            revert BatchSizeExceeded(recipientCount, MAX_BATCH_SIZE);
         }
 
         uint256 attemptedIssued = totalIssued + recipientCount;

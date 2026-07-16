@@ -7,6 +7,7 @@ cache/
 broadcast/
 coverage/
 lcov.info
+snapshots/
 
 node_modules/
 *.tsbuildinfo
