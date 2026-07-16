@@ -7,7 +7,7 @@ This repository defines and will implement a minimal, non-economic on-chain aler
 - Foundation: complete
 - Product specification: complete
 - Threat model and acceptance criteria: complete
-- Minimal contract implementation: next
+- Minimal contract implementation: in progress
 
 No production Solidity contract, recipient tooling, deployment script, wallet, key, or RPC configuration exists.
 

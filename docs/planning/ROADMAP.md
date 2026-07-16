@@ -5,7 +5,7 @@
 - Foundation: complete
 - Product specification: complete after the 2026-07-16 revision
 - Threat model and acceptance criteria: complete after the 2026-07-16 revision
-- Minimal contract implementation: next
+- Minimal contract implementation: in progress
 
 ## 1. Foundation and reproducibility
 
@@ -33,7 +33,7 @@ Exit condition: Threats, accepted trade-offs, release controls, invariants, and 
 
 ## 4. Minimal contract implementation
 
-Status: Next
+Status: In progress
 
 Entry condition: Specification, decisions, threat model, and acceptance criteria are committed consistently.
 
