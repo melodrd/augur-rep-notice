@@ -1,7 +1,7 @@
 # Project documentation
 
-Current status: foundation and the V2 product specification, threat model, and acceptance criteria are complete. V2
-contract implementation and validation are in progress.
+Current status: foundation and the V2 product specification, threat model, and acceptance criteria are complete. The V2
+core contract candidate is implemented and locally validated; maximum batch enforcement remains unresolved.
 
 | Document | Responsibility |
 | --- | --- |
@@ -12,6 +12,8 @@ contract implementation and validation are in progress.
 | [Etherscan runbook](operations/ETHERSCAN_RUNBOOK.md) | Source verification, metadata, logo, evidence, and correction workflow |
 | [Messaging policy](communications/MESSAGING.md) | Canonical wording, approved meaning, prohibited claims, publication hierarchy, and incident messaging |
 | [Roadmap](planning/ROADMAP.md) | Project phases, status, entry conditions, and exit conditions |
+| [V2 contract validation report](reports/CONTRACT_VALIDATION_REPORT_V2.md) | Current local implementation, test, gas, ABI, storage, coverage, and static-analysis evidence for the V2 candidate |
+| [V1 contract validation report](reports/CONTRACT_VALIDATION_REPORT.md) | Historical evidence for the superseded V1 metadata and no-burn candidate |
 | [Foundation report](reports/FOUNDATION_SETUP_REPORT.md) | Historical repository-initialization record |
 | [Toolchain report](reports/TOOLCHAIN_SETUP_REPORT.md) | Historical environment-setup record |
 

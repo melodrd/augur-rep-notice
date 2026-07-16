@@ -29,7 +29,8 @@ Status:
 - Foundation: complete.
 - V2 product specification: complete.
 - V2 threat model and acceptance criteria: complete.
-- V2 contract implementation and validation: next.
+- V2 core contract candidate: implemented and locally validated.
+- Maximum batch enforcement: unresolved pending an approved target-chain block gas limit and independent review.
 
 Default mode:
 

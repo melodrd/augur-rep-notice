@@ -4,6 +4,11 @@ Status: Core candidate validated locally; maximum batch enforcement unresolved
 
 Validation date: 2026-07-16
 
+> **Historical V1 evidence.** This report validates the superseded V1 candidate with `REP MIGRATION ALERT`,
+> `CHECKREP`, no burn path, and `totalSupply` equal to all unique recipients ever alerted. Its original measurements,
+> counts, ABI, storage layout, findings, and conclusions are preserved below and do not apply to V2. See the
+> [current V2 validation report](CONTRACT_VALIDATION_REPORT_V2.md).
+
 This report records local implementation review, behavioral testing, gas measurement, static analysis, ABI inspection,
 storage-layout inspection, and coverage for the first `REP MIGRATION ALERT` Solidity candidate.
 

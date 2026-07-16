@@ -5,7 +5,8 @@
 - Foundation: complete
 - V2 product specification: complete after the 2026-07-16 metadata and self-burn revision
 - V2 threat model and acceptance criteria: complete after the 2026-07-16 revision
-- V2 contract implementation and validation: in progress
+- V2 core contract candidate: implemented and locally validated
+- Maximum batch enforcement and the contract release gate: in progress
 
 ## 1. Foundation and reproducibility
 
@@ -41,6 +42,10 @@ Entry condition: Specification, decisions, threat model, and acceptance criteria
 
 Exit condition: One minimal V2 contract matches the specification and compiles without unresolved warnings.
 
+The V2 core candidate now matches the revised metadata, accounting, self-burn, and finalization model and compiles
+without Solidity warnings. This phase remains in progress because the measurement-driven maximum batch constant cannot
+be selected without an approved target-chain block gas limit and independent review.
+
 ## 5. Unit, fuzz, invariant, gas, and static-analysis work
 
 Status: In progress
@@ -49,9 +54,12 @@ Entry condition: Minimal contract candidate exists.
 
 Exit condition: Required tests and measurements pass; warnings and findings are resolved or explicitly accepted.
 
-The prior V1 candidate and its validation report are superseded historical evidence. V2 unit, fuzz, invariant, gas,
-coverage, ABI, storage-layout, and static-analysis evidence must be rerun and recorded before this phase completes.
-Maximum batch enforcement remains blocked on an approved target-chain gas-limit input and V2 measurements.
+Current V2 unit, fuzz, invariant, gas, coverage, ABI, storage-layout, and static-analysis evidence is recorded in the
+[V2 contract validation report](../reports/CONTRACT_VALIDATION_REPORT_V2.md). The prior
+[V1 validation report](../reports/CONTRACT_VALIDATION_REPORT.md) remains superseded historical evidence.
+
+The required local V2 checks pass, but this phase remains in progress because maximum batch enforcement is blocked on
+an approved target-chain gas-limit input and independent review of the selected constant.
 
 ## 6. Snapshot and recipient tooling
 
