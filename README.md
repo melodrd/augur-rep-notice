@@ -9,7 +9,11 @@ This repository defines and will implement a minimal, non-economic on-chain aler
 - Threat model and acceptance criteria: complete
 - Minimal contract implementation: in progress
 
-No production Solidity contract, recipient tooling, deployment script, wallet, key, or RPC configuration exists.
+Core contract candidate implemented and validated; maximum batch enforcement remains blocked on the approved gas-limit
+input.
+
+A Solidity candidate exists, but no production-approved or deployed contract exists. No recipient tooling, deployment
+script, wallet, key, or RPC configuration exists.
 
 ## Documentation
 
@@ -21,6 +25,7 @@ No production Solidity contract, recipient tooling, deployment script, wallet, k
 - [Etherscan runbook](docs/operations/ETHERSCAN_RUNBOOK.md)
 - [Messaging policy](docs/communications/MESSAGING.md)
 - [Roadmap](docs/planning/ROADMAP.md)
+- [Contract validation report](docs/reports/CONTRACT_VALIDATION_REPORT.md)
 
 Run the local validation suite with:
 

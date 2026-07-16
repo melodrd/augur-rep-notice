@@ -41,11 +41,15 @@ Exit condition: One minimal contract matches the specification and compiles with
 
 ## 5. Unit, fuzz, invariant, gas, and static-analysis work
 
-Status: Not started
+Status: In progress
 
 Entry condition: Minimal contract candidate exists.
 
 Exit condition: Required tests and measurements pass; warnings and findings are resolved or explicitly accepted.
+
+Core contract candidate implemented and validated; maximum batch enforcement remains blocked on the approved gas-limit
+input. Unit, fuzz, invariant, gas, coverage, ABI, storage-layout, and static-analysis evidence is recorded in the
+[contract validation report](../reports/CONTRACT_VALIDATION_REPORT.md).
 
 ## 6. Snapshot and recipient tooling
 
