@@ -10,14 +10,13 @@ contract RepMigrationAlert {
     uint8 private constant _DECIMALS = 0;
     uint256 private constant _UNIT = 1;
 
+    /// @dev Full-word values avoid partial-slot mapping writes while keeping the state machine explicit.
+    uint256 private constant _STATUS_NEVER_ALERTED = 0;
+    uint256 private constant _STATUS_ACTIVE = 1;
+    uint256 private constant _STATUS_BURNED = 2;
+
     /// @notice The hard maximum number of recipients accepted by one distribution call.
     uint256 public constant MAX_BATCH_SIZE = 500;
-
-    enum AlertStatus {
-        NeverAlerted,
-        Active,
-        Burned
-    }
 
     /// @notice Reverts when the constructor authority is the zero address.
     error ZeroAuthority();
@@ -87,7 +86,7 @@ contract RepMigrationAlert {
     /// @notice Whether distribution has been permanently closed.
     bool public finalized;
 
-    mapping(address account => AlertStatus status) private _status;
+    mapping(address account => uint256 status) private _status;
 
     /// @notice Creates an unfinalized alert contract with zero initial supply.
     /// @param authority_ The sole address permitted to distribute or finalize.
@@ -121,12 +120,12 @@ contract RepMigrationAlert {
 
     /// @notice Returns an address's active alert balance, which is always zero or one.
     function balanceOf(address account) public view returns (uint256) {
-        return _status[account] == AlertStatus.Active ? _UNIT : 0;
+        return _status[account] == _STATUS_ACTIVE ? _UNIT : 0;
     }
 
     /// @notice Returns whether an address was ever successfully alerted.
     function wasAlerted(address account) external view returns (bool) {
-        return _status[account] != AlertStatus.NeverAlerted;
+        return _status[account] != _STATUS_NEVER_ALERTED;
     }
 
     /// @notice Returns zero because approvals are permanently disabled.
@@ -162,12 +161,12 @@ contract RepMigrationAlert {
             if (recipient == address(0)) {
                 revert ZeroRecipient(index);
             }
-            if (_status[recipient] != AlertStatus.NeverAlerted) {
+            if (_status[recipient] != _STATUS_NEVER_ALERTED) {
                 revert RecipientAlreadyNotified(recipient);
             }
 
             // A later invalid entry reverts earlier writes and events, including in-call duplicates.
-            _status[recipient] = AlertStatus.Active;
+            _status[recipient] = _STATUS_ACTIVE;
             emit Transfer(address(0), recipient, _UNIT);
         }
 
@@ -178,11 +177,11 @@ contract RepMigrationAlert {
     /// @notice Permanently removes the caller's active alert unit.
     /// @dev Holder self-burn intentionally remains available after issuance finalization.
     function burn() external {
-        if (_status[msg.sender] != AlertStatus.Active) {
+        if (_status[msg.sender] != _STATUS_ACTIVE) {
             revert NoAlertBalance(msg.sender);
         }
 
-        _status[msg.sender] = AlertStatus.Burned;
+        _status[msg.sender] = _STATUS_BURNED;
         totalSupply -= _UNIT;
         emit Transfer(msg.sender, address(0), _UNIT);
     }
