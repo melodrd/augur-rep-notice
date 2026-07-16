@@ -28,11 +28,16 @@ contract RepMigrationAlertFuzzTest is Test {
         for (uint256 index = 0; index < recipients.length; index++) {
             assertEq(alert.balanceOf(recipients[index]), 1);
             assertLe(alert.balanceOf(recipients[index]), 1);
+            assertTrue(alert.wasAlerted(recipients[index]));
         }
         assertEq(alert.balanceOf(unrelated), 0);
+        assertFalse(alert.wasAlerted(unrelated));
         assertEq(alert.balanceOf(address(0)), 0);
+        assertFalse(alert.wasAlerted(address(0)));
+        assertEq(alert.totalIssued(), recipients.length);
         assertEq(alert.totalSupply(), recipients.length);
-        assertLe(alert.totalSupply(), alert.distributionCap());
+        assertLe(alert.totalSupply(), alert.totalIssued());
+        assertLe(alert.totalIssued(), alert.distributionCap());
         assertFalse(alert.finalized());
     }
 
@@ -49,15 +54,20 @@ contract RepMigrationAlertFuzzTest is Test {
 
         vm.startPrank(AUTHORITY);
         alert.distribute(firstBatch);
+        uint256 issuedAfterFirstBatch = alert.totalIssued();
         uint256 supplyAfterFirstBatch = alert.totalSupply();
         alert.distribute(secondBatch);
         vm.stopPrank();
 
+        assertEq(issuedAfterFirstBatch, firstLength);
         assertEq(supplyAfterFirstBatch, firstLength);
+        assertEq(alert.totalIssued(), firstLength + secondLength);
         assertEq(alert.totalSupply(), firstLength + secondLength);
-        assertLe(alert.totalSupply(), alert.distributionCap());
+        assertLe(alert.totalSupply(), alert.totalIssued());
+        assertLe(alert.totalIssued(), alert.distributionCap());
         for (uint256 index = 0; index < allRecipients.length; index++) {
             assertEq(alert.balanceOf(allRecipients[index]), 1);
+            assertTrue(alert.wasAlerted(allRecipients[index]));
         }
     }
 
@@ -139,6 +149,7 @@ contract RepMigrationAlertFuzzTest is Test {
         address priorRecipient = allRecipients[0];
         vm.prank(AUTHORITY);
         alert.distribute(_slice(allRecipients, 0, 1));
+        assertTrue(alert.wasAlerted(priorRecipient));
 
         address[] memory attemptedBatch = _slice(allRecipients, 1, length);
         uint256 priorIndex = bound(rawIndex, 0, length - 1);
@@ -150,6 +161,120 @@ contract RepMigrationAlertFuzzTest is Test {
             attemptedBatch,
             abi.encodeWithSelector(RepMigrationAlert.RecipientAlreadyNotified.selector, priorRecipient)
         );
+    }
+
+    function testFuzz_BurnedRecipientRevertsAtomically(uint256 rawBase, uint8 rawLength, uint8 rawPlacement) public {
+        uint256 length = bound(rawLength, 1, 32);
+        address[] memory allRecipients = _uniqueRecipients(rawBase, length + 1);
+        address burnedRecipient = allRecipients[0];
+        vm.prank(AUTHORITY);
+        alert.distribute(_slice(allRecipients, 0, 1));
+        vm.prank(burnedRecipient);
+        alert.burn();
+
+        address[] memory attemptedBatch = _slice(allRecipients, 1, length);
+        attemptedBatch[bound(rawPlacement, 0, length - 1)] = burnedRecipient;
+
+        _assertDistributionRevertsAtomically(
+            alert,
+            AUTHORITY,
+            attemptedBatch,
+            abi.encodeWithSelector(RepMigrationAlert.RecipientAlreadyNotified.selector, burnedRecipient)
+        );
+
+        assertEq(alert.balanceOf(burnedRecipient), 0);
+        assertTrue(alert.wasAlerted(burnedRecipient));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 0);
+    }
+
+    function testFuzz_ArbitraryActiveHolderBurnsExactlyOnce(
+        uint256 rawBase,
+        uint8 rawLength,
+        uint8 rawIndex,
+        bool finalizeFirst
+    ) public {
+        uint256 length = bound(rawLength, 1, 32);
+        address[] memory recipients = _uniqueRecipients(rawBase, length);
+        uint256 burnIndex = bound(rawIndex, 0, length - 1);
+        address holder = recipients[burnIndex];
+
+        vm.prank(AUTHORITY);
+        alert.distribute(recipients);
+        if (finalizeFirst) {
+            vm.prank(AUTHORITY);
+            alert.finalize();
+        }
+
+        uint256 issuedBefore = alert.totalIssued();
+        uint256 supplyBefore = alert.totalSupply();
+        vm.prank(holder);
+        alert.burn();
+
+        assertEq(alert.totalIssued(), issuedBefore);
+        assertEq(alert.totalSupply(), supplyBefore - 1);
+        assertEq(alert.balanceOf(holder), 0);
+        assertTrue(alert.wasAlerted(holder));
+        assertEq(alert.finalized(), finalizeFirst);
+        assertLe(alert.totalSupply(), alert.totalIssued());
+        assertLe(alert.totalIssued(), alert.distributionCap());
+
+        vm.prank(holder);
+        vm.expectRevert(abi.encodeWithSelector(RepMigrationAlert.NoAlertBalance.selector, holder));
+        alert.burn();
+
+        for (uint256 index = 0; index < recipients.length; index++) {
+            assertTrue(alert.wasAlerted(recipients[index]));
+            assertEq(alert.balanceOf(recipients[index]), index == burnIndex ? 0 : 1);
+        }
+        assertEq(alert.totalIssued(), issuedBefore);
+        assertEq(alert.totalSupply(), supplyBefore - 1);
+    }
+
+    function testFuzz_ArbitraryNeverAlertedCallerCannotBurn(uint160 rawCaller) public {
+        address caller = address(rawCaller);
+        if (caller == address(0)) {
+            caller = FALLBACK_OUTSIDER;
+        }
+
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(RepMigrationAlert.NoAlertBalance.selector, caller));
+        alert.burn();
+
+        assertEq(alert.balanceOf(caller), 0);
+        assertFalse(alert.wasAlerted(caller));
+        assertEq(alert.totalIssued(), 0);
+        assertEq(alert.totalSupply(), 0);
+        assertFalse(alert.finalized());
+    }
+
+    function testFuzz_BurnsCannotRestoreCapCapacity(uint256 rawBase, uint8 rawBurnCount) public {
+        uint256 cap = 32;
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, cap);
+        address[] memory recipients = _uniqueRecipients(rawBase, cap + 1);
+        uint256 burnCount = bound(rawBurnCount, 1, cap);
+
+        vm.prank(AUTHORITY);
+        target.distribute(_slice(recipients, 0, cap));
+        for (uint256 index = 0; index < burnCount; index++) {
+            vm.prank(recipients[index]);
+            target.burn();
+        }
+
+        _assertDistributionRevertsAtomically(
+            target,
+            AUTHORITY,
+            _slice(recipients, cap, 1),
+            abi.encodeWithSelector(RepMigrationAlert.DistributionCapExceeded.selector, cap + 1, cap)
+        );
+
+        assertEq(target.totalIssued(), cap);
+        assertEq(target.totalSupply(), cap - burnCount);
+        assertLe(target.totalSupply(), target.totalIssued());
+        for (uint256 index = 0; index < burnCount; index++) {
+            assertEq(target.balanceOf(recipients[index]), 0);
+            assertTrue(target.wasAlerted(recipients[index]));
+        }
     }
 
     function testFuzz_ArbitraryUnauthorizedCallerCannotDistributeOrFinalize(
@@ -168,55 +293,60 @@ contract RepMigrationAlertFuzzTest is Test {
         vm.expectRevert(abi.encodeWithSelector(RepMigrationAlert.UnauthorizedCaller.selector, caller));
         alert.finalize();
 
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
         assertFalse(alert.finalized());
     }
 
-    function testFuzz_ValidSequenceNeverExceedsCap(uint256 rawBase, uint8 rawCurrentSupply, uint8 rawBatchLength)
+    function testFuzz_ValidSequenceNeverExceedsCap(uint256 rawBase, uint8 rawCurrentIssued, uint8 rawBatchLength)
         public
     {
         uint256 cap = 64;
         RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, cap);
-        uint256 currentSupply = bound(rawCurrentSupply, 0, cap - 1);
-        uint256 batchLength = bound(rawBatchLength, 1, cap - currentSupply);
-        address[] memory allRecipients = _uniqueRecipients(rawBase, currentSupply + batchLength);
+        uint256 currentIssued = bound(rawCurrentIssued, 0, cap - 1);
+        uint256 batchLength = bound(rawBatchLength, 1, cap - currentIssued);
+        address[] memory allRecipients = _uniqueRecipients(rawBase, currentIssued + batchLength);
 
         vm.startPrank(AUTHORITY);
-        if (currentSupply != 0) {
-            target.distribute(_slice(allRecipients, 0, currentSupply));
+        if (currentIssued != 0) {
+            target.distribute(_slice(allRecipients, 0, currentIssued));
         }
+        uint256 issuedBefore = target.totalIssued();
         uint256 supplyBefore = target.totalSupply();
-        target.distribute(_slice(allRecipients, currentSupply, batchLength));
+        target.distribute(_slice(allRecipients, currentIssued, batchLength));
         vm.stopPrank();
 
-        assertEq(supplyBefore, currentSupply);
-        assertEq(target.totalSupply(), currentSupply + batchLength);
-        assertLe(target.totalSupply(), target.distributionCap());
+        assertEq(issuedBefore, currentIssued);
+        assertEq(supplyBefore, currentIssued);
+        assertEq(target.totalIssued(), currentIssued + batchLength);
+        assertEq(target.totalSupply(), currentIssued + batchLength);
+        assertLe(target.totalSupply(), target.totalIssued());
+        assertLe(target.totalIssued(), target.distributionCap());
     }
 
     function testFuzz_DistributionAboveRemainingCapRevertsAtomically(
         uint256 rawBase,
-        uint8 rawCurrentSupply,
+        uint8 rawCurrentIssued,
         uint8 rawExcess
     ) public {
         uint256 cap = 64;
         RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, cap);
-        uint256 currentSupply = bound(rawCurrentSupply, 0, 32);
-        uint256 attemptedLength = cap - currentSupply + bound(rawExcess, 1, 32);
-        address[] memory allRecipients = _uniqueRecipients(rawBase, currentSupply + attemptedLength);
+        uint256 currentIssued = bound(rawCurrentIssued, 0, 32);
+        uint256 attemptedLength = cap - currentIssued + bound(rawExcess, 1, 32);
+        address[] memory allRecipients = _uniqueRecipients(rawBase, currentIssued + attemptedLength);
 
-        if (currentSupply != 0) {
+        if (currentIssued != 0) {
             vm.prank(AUTHORITY);
-            target.distribute(_slice(allRecipients, 0, currentSupply));
+            target.distribute(_slice(allRecipients, 0, currentIssued));
         }
 
-        address[] memory attemptedBatch = _slice(allRecipients, currentSupply, attemptedLength);
+        address[] memory attemptedBatch = _slice(allRecipients, currentIssued, attemptedLength);
         _assertDistributionRevertsAtomically(
             target,
             AUTHORITY,
             attemptedBatch,
             abi.encodeWithSelector(
-                RepMigrationAlert.DistributionCapExceeded.selector, currentSupply + attemptedLength, cap
+                RepMigrationAlert.DistributionCapExceeded.selector, currentIssued + attemptedLength, cap
             )
         );
     }
@@ -246,12 +376,17 @@ contract RepMigrationAlertFuzzTest is Test {
         alert.approve(spender, value);
 
         assertEq(alert.allowance(owner, spender), 0);
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
         assertEq(alert.balanceOf(owner), 0);
+        assertFalse(alert.wasAlerted(owner));
         assertEq(alert.balanceOf(recipient), 0);
+        assertFalse(alert.wasAlerted(recipient));
     }
 
-    function testFuzz_FinalizationPermanentlyFreezesArbitraryValidState(uint256 rawBase, uint8 rawLength) public {
+    function testFuzz_FinalizationFreezesIssuedButAllowsHolderBurn(uint256 rawBase, uint8 rawLength, uint8 rawBurnIndex)
+        public
+    {
         uint256 length = bound(rawLength, 0, 32);
         address[] memory recipients = _uniqueRecipients(rawBase, length + 1);
 
@@ -262,7 +397,16 @@ contract RepMigrationAlertFuzzTest is Test {
         alert.finalize();
         vm.stopPrank();
 
-        uint256 finalSupply = alert.totalSupply();
+        uint256 finalIssued = alert.totalIssued();
+        uint256 finalizationSupply = alert.totalSupply();
+        address burnedRecipient;
+        if (length != 0) {
+            uint256 burnIndex = bound(rawBurnIndex, 0, length - 1);
+            burnedRecipient = recipients[burnIndex];
+            vm.prank(burnedRecipient);
+            alert.burn();
+        }
+
         _assertDistributionRevertsAtomically(
             alert,
             AUTHORITY,
@@ -271,11 +415,15 @@ contract RepMigrationAlertFuzzTest is Test {
         );
 
         assertTrue(alert.finalized());
-        assertEq(alert.totalSupply(), finalSupply);
+        assertEq(alert.totalIssued(), finalIssued);
+        assertEq(alert.totalSupply(), length == 0 ? finalizationSupply : finalizationSupply - 1);
+        assertLe(alert.totalSupply(), alert.totalIssued());
         for (uint256 index = 0; index < length; index++) {
-            assertEq(alert.balanceOf(recipients[index]), 1);
+            assertTrue(alert.wasAlerted(recipients[index]));
+            assertEq(alert.balanceOf(recipients[index]), recipients[index] == burnedRecipient ? 0 : 1);
         }
         assertEq(alert.balanceOf(recipients[length]), 0);
+        assertFalse(alert.wasAlerted(recipients[length]));
     }
 
     function _assertDistributionRevertsAtomically(
@@ -284,22 +432,28 @@ contract RepMigrationAlertFuzzTest is Test {
         address[] memory recipients,
         bytes memory revertData
     ) internal {
+        uint256 issuedBefore = target.totalIssued();
         uint256 supplyBefore = target.totalSupply();
         bool finalizedBefore = target.finalized();
         uint256[] memory balancesBefore = new uint256[](recipients.length);
+        bool[] memory alertedBefore = new bool[](recipients.length);
         for (uint256 index = 0; index < recipients.length; index++) {
             balancesBefore[index] = target.balanceOf(recipients[index]);
+            alertedBefore[index] = target.wasAlerted(recipients[index]);
         }
 
         vm.prank(caller);
         vm.expectRevert(revertData);
         target.distribute(recipients);
 
+        assertEq(target.totalIssued(), issuedBefore);
         assertEq(target.totalSupply(), supplyBefore);
         assertEq(target.finalized(), finalizedBefore);
         assertEq(target.balanceOf(address(0)), 0);
+        assertFalse(target.wasAlerted(address(0)));
         for (uint256 index = 0; index < recipients.length; index++) {
             assertEq(target.balanceOf(recipients[index]), balancesBefore[index]);
+            assertEq(target.wasAlerted(recipients[index]), alertedBefore[index]);
         }
     }
 

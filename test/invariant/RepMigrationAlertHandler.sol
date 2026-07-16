@@ -14,20 +14,30 @@ contract RepMigrationAlertHandler is Test {
     address public immutable deployer;
 
     address[] internal recipientPool;
-    mapping(address recipient => bool notified) public ghostNotified;
+    mapping(address recipient => bool alerted) public ghostEverAlerted;
+    mapping(address recipient => bool active) public ghostActive;
+    mapping(address recipient => bool burned) public ghostBurned;
 
-    uint256 public ghostSupply;
+    uint256 public ghostTotalIssued;
+    uint256 public ghostActiveSupply;
+    uint256 public ghostBurnedCount;
     bool public ghostFinalized;
-    uint256 public supplyAtFinalization;
+    uint256 public issuedAtFinalization;
+    uint256 public activeSupplyAtFinalization;
     uint256 public successfulFinalizations;
+    uint256 public successfulBurns;
+    uint256 public successfulBurnsBeforeFinalization;
+    uint256 public successfulBurnsAfterFinalization;
 
     uint256 public unexpectedValidDistributionReverts;
     uint256 public invalidDistributionSuccesses;
     uint256 public unauthorizedDistributionSuccesses;
+    uint256 public postFinalizationDistributionSuccesses;
+    uint256 public unexpectedValidBurnReverts;
+    uint256 public invalidBurnSuccesses;
     uint256 public unauthorizedFinalizationSuccesses;
     uint256 public unexpectedAuthorizedFinalizationReverts;
     uint256 public repeatedFinalizationSuccesses;
-    uint256 public postFinalizationDistributionSuccesses;
     uint256 public transferSuccesses;
     uint256 public transferFromSuccesses;
     uint256 public approveSuccesses;
@@ -40,17 +50,21 @@ contract RepMigrationAlertHandler is Test {
         uint256 poolSize = alert_.distributionCap() + 1;
         uint160 recipientValue = 0x10_000;
         while (recipientPool.length < poolSize) {
-            recipientPool.push(address(recipientValue));
+            address recipient = address(recipientValue);
             recipientValue++;
+            if (recipient == authority_ || recipient == deployer_) {
+                continue;
+            }
+            recipientPool.push(recipient);
         }
     }
 
     function distributeValid(uint256 rawCount) external {
-        if (ghostFinalized || ghostSupply == alert.distributionCap()) {
+        if (ghostFinalized || ghostTotalIssued == alert.distributionCap()) {
             return;
         }
 
-        uint256 remaining = alert.distributionCap() - ghostSupply;
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
         uint256 count = bound(rawCount, 1, _min(MAX_SMALL_BATCH, remaining));
         address[] memory recipients = _newRecipients(count);
 
@@ -71,11 +85,11 @@ contract RepMigrationAlertHandler is Test {
     }
 
     function distributeZero(uint256 rawCount, uint256 rawIndex) external {
-        if (ghostFinalized || ghostSupply == alert.distributionCap()) {
+        if (ghostFinalized || ghostTotalIssued == alert.distributionCap()) {
             return;
         }
 
-        uint256 remaining = alert.distributionCap() - ghostSupply;
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
         uint256 count = bound(rawCount, 1, _min(MAX_SMALL_BATCH, remaining));
         address[] memory recipients = _newRecipients(count);
         recipients[bound(rawIndex, 0, count - 1)] = address(0);
@@ -87,7 +101,7 @@ contract RepMigrationAlertHandler is Test {
     }
 
     function distributeAdjacentDuplicate(uint256 rawCount, uint256 rawIndex) external {
-        uint256 remaining = alert.distributionCap() - ghostSupply;
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
         if (ghostFinalized || remaining < 2) {
             return;
         }
@@ -104,7 +118,7 @@ contract RepMigrationAlertHandler is Test {
     }
 
     function distributeNonAdjacentDuplicate(uint256 rawCount, uint256 rawIndex) external {
-        uint256 remaining = alert.distributionCap() - ghostSupply;
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
         if (ghostFinalized || remaining < 3) {
             return;
         }
@@ -120,18 +134,15 @@ contract RepMigrationAlertHandler is Test {
         }
     }
 
-    function distributePreviouslyNotified(uint256 rawExistingIndex, uint256 rawNewCount, uint256 rawPlacement)
-        external
-    {
-        uint256 remaining = alert.distributionCap() - ghostSupply;
-        if (ghostFinalized || ghostSupply == 0 || remaining == 0) {
+    function distributePreviouslyActive(uint256 rawExistingIndex, uint256 rawNewCount, uint256 rawPlacement) external {
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
+        if (ghostFinalized || ghostActiveSupply == 0 || remaining == 0) {
             return;
         }
 
         uint256 count = bound(rawNewCount, 1, _min(MAX_SMALL_BATCH, remaining));
         address[] memory recipients = _newRecipients(count);
-        address existingRecipient = recipientPool[bound(rawExistingIndex, 0, ghostSupply - 1)];
-        recipients[bound(rawPlacement, 0, count - 1)] = existingRecipient;
+        recipients[bound(rawPlacement, 0, count - 1)] = _activeRecipient(rawExistingIndex);
 
         (bool success,) = _distributeAs(authority, recipients);
         if (success) {
@@ -139,8 +150,37 @@ contract RepMigrationAlertHandler is Test {
         }
     }
 
+    function distributePreviouslyBurned(uint256 rawExistingIndex, uint256 rawNewCount, uint256 rawPlacement) external {
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
+        if (ghostFinalized || ghostBurnedCount == 0 || remaining == 0) {
+            return;
+        }
+
+        uint256 count = bound(rawNewCount, 1, _min(MAX_SMALL_BATCH, remaining));
+        address[] memory recipients = _newRecipients(count);
+        recipients[bound(rawPlacement, 0, count - 1)] = _burnedRecipient(rawExistingIndex);
+
+        (bool success,) = _distributeAs(authority, recipients);
+        if (success) {
+            invalidDistributionSuccesses++;
+        }
+    }
+
+    function distributeBurnedRecipient(uint256 rawBurnedIndex) external {
+        if (ghostFinalized || ghostBurnedCount == 0 || ghostTotalIssued == alert.distributionCap()) {
+            return;
+        }
+
+        address[] memory recipients = new address[](1);
+        recipients[0] = _burnedRecipient(rawBurnedIndex);
+        (bool success,) = _distributeAs(authority, recipients);
+        if (success) {
+            invalidDistributionSuccesses++;
+        }
+    }
+
     function distributeCapBoundary(uint256 rawGate) external {
-        uint256 remaining = alert.distributionCap() - ghostSupply;
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
         if (rawGate % FINALIZATION_GATE != 0 || ghostFinalized || remaining == 0) {
             return;
         }
@@ -160,7 +200,7 @@ contract RepMigrationAlertHandler is Test {
             return;
         }
 
-        uint256 remaining = alert.distributionCap() - ghostSupply;
+        uint256 remaining = alert.distributionCap() - ghostTotalIssued;
         uint256 excess = bound(rawExcess, 1, 1);
         address[] memory recipients = _newRecipients(remaining + excess);
 
@@ -201,6 +241,48 @@ contract RepMigrationAlertHandler is Test {
         }
     }
 
+    function burnValid(uint256 rawHolderIndex) external {
+        if (ghostActiveSupply == 0) {
+            return;
+        }
+        _attemptValidBurn(_activeRecipient(rawHolderIndex));
+    }
+
+    function burnBeforeFinalization(uint256 rawHolderIndex) external {
+        if (ghostFinalized || ghostActiveSupply == 0) {
+            return;
+        }
+        _attemptValidBurn(_activeRecipient(rawHolderIndex));
+    }
+
+    function burnAfterFinalization(uint256 rawHolderIndex) external {
+        if (!ghostFinalized || ghostActiveSupply == 0) {
+            return;
+        }
+        _attemptValidBurn(_activeRecipient(rawHolderIndex));
+    }
+
+    function burnNeverAlerted(uint256 rawRecipientIndex) external {
+        uint256 neverAlertedCount = recipientPool.length - ghostTotalIssued;
+        address caller = recipientPool[ghostTotalIssued + (rawRecipientIndex % neverAlertedCount)];
+        _attemptInvalidBurn(caller);
+    }
+
+    function burnRepeated(uint256 rawBurnedIndex) external {
+        if (ghostBurnedCount == 0) {
+            return;
+        }
+        _attemptInvalidBurn(_burnedRecipient(rawBurnedIndex));
+    }
+
+    function burnAsAuthority() external {
+        _attemptInvalidBurn(authority);
+    }
+
+    function burnAsDeployer() external {
+        _attemptInvalidBurn(deployer);
+    }
+
     function finalizeAuthorized(uint256 rawGate) external {
         if (!ghostFinalized && rawGate % FINALIZATION_GATE != 0) {
             return;
@@ -211,7 +293,8 @@ contract RepMigrationAlertHandler is Test {
         if (!ghostFinalized) {
             if (success) {
                 ghostFinalized = true;
-                supplyAtFinalization = ghostSupply;
+                issuedAtFinalization = ghostTotalIssued;
+                activeSupplyAtFinalization = ghostActiveSupply;
                 successfulFinalizations++;
             } else {
                 unexpectedAuthorizedFinalizationReverts++;
@@ -292,17 +375,51 @@ contract RepMigrationAlertHandler is Test {
         return address(alert).call(abi.encodeCall(alert.distribute, (recipients)));
     }
 
+    function _burnAs(address caller) internal returns (bool success, bytes memory returnData) {
+        vm.prank(caller);
+        return address(alert).call(abi.encodeCall(alert.burn, ()));
+    }
+
+    function _attemptValidBurn(address holder) internal {
+        (bool success,) = _burnAs(holder);
+        if (!success) {
+            unexpectedValidBurnReverts++;
+            return;
+        }
+
+        ghostActive[holder] = false;
+        ghostBurned[holder] = true;
+        ghostActiveSupply--;
+        ghostBurnedCount++;
+        successfulBurns++;
+        if (ghostFinalized) {
+            successfulBurnsAfterFinalization++;
+        } else {
+            successfulBurnsBeforeFinalization++;
+        }
+    }
+
+    function _attemptInvalidBurn(address caller) internal {
+        (bool success,) = _burnAs(caller);
+        if (success) {
+            invalidBurnSuccesses++;
+        }
+    }
+
     function _recordSuccessfulDistribution(address[] memory recipients) internal {
         for (uint256 index = 0; index < recipients.length; index++) {
-            ghostNotified[recipients[index]] = true;
+            address recipient = recipients[index];
+            ghostEverAlerted[recipient] = true;
+            ghostActive[recipient] = true;
         }
-        ghostSupply += recipients.length;
+        ghostTotalIssued += recipients.length;
+        ghostActiveSupply += recipients.length;
     }
 
     function _newRecipients(uint256 count) internal view returns (address[] memory recipients) {
         recipients = new address[](count);
         for (uint256 index = 0; index < count; index++) {
-            recipients[index] = recipientPool[ghostSupply + index];
+            recipients[index] = recipientPool[ghostTotalIssued + index];
         }
     }
 
@@ -311,6 +428,36 @@ contract RepMigrationAlertHandler is Test {
         for (uint256 index = 0; index < count; index++) {
             recipients[index] = recipientPool[index];
         }
+    }
+
+    function _activeRecipient(uint256 rawIndex) internal view returns (address) {
+        uint256 remainingIndex = rawIndex % ghostActiveSupply;
+        for (uint256 index = 0; index < ghostTotalIssued; index++) {
+            address recipient = recipientPool[index];
+            if (!ghostActive[recipient]) {
+                continue;
+            }
+            if (remainingIndex == 0) {
+                return recipient;
+            }
+            remainingIndex--;
+        }
+        return address(0);
+    }
+
+    function _burnedRecipient(uint256 rawIndex) internal view returns (address) {
+        uint256 remainingIndex = rawIndex % ghostBurnedCount;
+        for (uint256 index = 0; index < ghostTotalIssued; index++) {
+            address recipient = recipientPool[index];
+            if (!ghostBurned[recipient]) {
+                continue;
+            }
+            if (remainingIndex == 0) {
+                return recipient;
+            }
+            remainingIndex--;
+        }
+        return address(0);
     }
 
     function _unauthorizedPoolAddress(uint256 rawIndex) internal view returns (address caller) {

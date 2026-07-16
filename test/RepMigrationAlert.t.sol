@@ -27,18 +27,23 @@ contract RepMigrationAlertTest is Test {
     }
 
     function test_ConstructorSetsApprovedInitialState() public view {
-        assertEq(alert.name(), "REP MIGRATION ALERT");
-        assertEq(alert.symbol(), "CHECKREP");
+        assertEq(alert.name(), "CHECK AUGUR REP MIGRATION");
+        assertEq(alert.symbol(), "MIGRATEREP");
         assertEq(alert.decimals(), 0);
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
         assertEq(alert.balanceOf(RECIPIENT_A), 0);
+        assertFalse(alert.wasAlerted(RECIPIENT_A));
         assertEq(alert.balanceOf(address(0)), 0);
+        assertFalse(alert.wasAlerted(address(0)));
         assertEq(alert.allowance(RECIPIENT_A, RECIPIENT_B), 0);
         assertEq(alert.authority(), AUTHORITY);
         assertEq(alert.distributionCap(), DISTRIBUTION_CAP);
         assertFalse(alert.finalized());
         assertEq(alert.balanceOf(DEPLOYER), 0);
+        assertFalse(alert.wasAlerted(DEPLOYER));
         assertEq(alert.balanceOf(AUTHORITY), 0);
+        assertFalse(alert.wasAlerted(AUTHORITY));
     }
 
     function test_ConstructorEmitsNoIssuanceEvent() public {
@@ -82,6 +87,8 @@ contract RepMigrationAlertTest is Test {
 
         assertEq(sameAddressAlert.authority(), AUTHORITY);
         assertEq(sameAddressAlert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(sameAddressAlert.wasAlerted(RECIPIENT_A));
+        assertEq(sameAddressAlert.totalIssued(), 1);
         assertEq(sameAddressAlert.totalSupply(), 1);
         assertTrue(sameAddressAlert.finalized());
     }
@@ -94,7 +101,10 @@ contract RepMigrationAlertTest is Test {
         alert.distribute(_recipients(RECIPIENT_A));
 
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
         assertEq(alert.balanceOf(RECIPIENT_B), 0);
+        assertFalse(alert.wasAlerted(RECIPIENT_B));
+        assertEq(alert.totalIssued(), 1);
         assertEq(alert.totalSupply(), 1);
         assertFalse(alert.finalized());
     }
@@ -106,6 +116,8 @@ contract RepMigrationAlertTest is Test {
         alert.distribute(canary);
 
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), canary.length);
         assertEq(alert.totalSupply(), canary.length);
     }
 
@@ -118,7 +130,12 @@ contract RepMigrationAlertTest is Test {
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
         assertEq(alert.balanceOf(RECIPIENT_B), 1);
         assertEq(alert.balanceOf(RECIPIENT_C), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertTrue(alert.wasAlerted(RECIPIENT_B));
+        assertTrue(alert.wasAlerted(RECIPIENT_C));
         assertEq(alert.balanceOf(OUTSIDER), 0);
+        assertFalse(alert.wasAlerted(OUTSIDER));
+        assertEq(alert.totalIssued(), recipients.length);
         assertEq(alert.totalSupply(), recipients.length);
         assertFalse(alert.finalized());
     }
@@ -132,6 +149,10 @@ contract RepMigrationAlertTest is Test {
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
         assertEq(alert.balanceOf(RECIPIENT_B), 1);
         assertEq(alert.balanceOf(RECIPIENT_C), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertTrue(alert.wasAlerted(RECIPIENT_B));
+        assertTrue(alert.wasAlerted(RECIPIENT_C));
+        assertEq(alert.totalIssued(), 3);
         assertEq(alert.totalSupply(), 3);
     }
 
@@ -142,6 +163,8 @@ contract RepMigrationAlertTest is Test {
         alert.distribute(_recipients(address(contractRecipient)));
 
         assertEq(alert.balanceOf(address(contractRecipient)), 1);
+        assertTrue(alert.wasAlerted(address(contractRecipient)));
+        assertEq(alert.totalIssued(), 1);
         assertEq(alert.totalSupply(), 1);
     }
 
@@ -171,10 +194,14 @@ contract RepMigrationAlertTest is Test {
         vm.prank(AUTHORITY);
         cappedAlert.distribute(recipients);
 
+        assertEq(cappedAlert.totalIssued(), cappedAlert.distributionCap());
         assertEq(cappedAlert.totalSupply(), cappedAlert.distributionCap());
         assertEq(cappedAlert.balanceOf(RECIPIENT_A), 1);
         assertEq(cappedAlert.balanceOf(RECIPIENT_B), 1);
         assertEq(cappedAlert.balanceOf(RECIPIENT_C), 1);
+        assertTrue(cappedAlert.wasAlerted(RECIPIENT_A));
+        assertTrue(cappedAlert.wasAlerted(RECIPIENT_B));
+        assertTrue(cappedAlert.wasAlerted(RECIPIENT_C));
         assertFalse(cappedAlert.finalized());
     }
 
@@ -246,8 +273,38 @@ contract RepMigrationAlertTest is Test {
         );
     }
 
+    function test_RevertWhen_RecipientWasPreviouslyNotifiedAndBurned() public {
+        _distribute(RECIPIENT_A);
+        vm.prank(RECIPIENT_A);
+        alert.burn();
+
+        assertEq(alert.balanceOf(RECIPIENT_A), 0);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 0);
+
+        _assertDistributionRevertsAtomically(
+            AUTHORITY,
+            _recipients(RECIPIENT_A),
+            abi.encodeWithSelector(RepMigrationAlert.RecipientAlreadyNotified.selector, RECIPIENT_A)
+        );
+    }
+
     function test_RevertWhen_PreviouslyNotifiedRecipientIsMixedWithNewRecipients() public {
         _distribute(RECIPIENT_B);
+        address[] memory recipients = _recipients(RECIPIENT_A, RECIPIENT_B, RECIPIENT_C);
+
+        _assertDistributionRevertsAtomically(
+            AUTHORITY,
+            recipients,
+            abi.encodeWithSelector(RepMigrationAlert.RecipientAlreadyNotified.selector, RECIPIENT_B)
+        );
+    }
+
+    function test_RevertWhen_BurnedRecipientIsMixedWithNewRecipients() public {
+        _distribute(RECIPIENT_B);
+        vm.prank(RECIPIENT_B);
+        alert.burn();
         address[] memory recipients = _recipients(RECIPIENT_A, RECIPIENT_B, RECIPIENT_C);
 
         _assertDistributionRevertsAtomically(
@@ -311,6 +368,27 @@ contract RepMigrationAlertTest is Test {
         );
     }
 
+    function test_BurningDoesNotCreateDistributionCapHeadroom() public {
+        RepMigrationAlert cappedAlert = new RepMigrationAlert(AUTHORITY, 2);
+        vm.prank(AUTHORITY);
+        cappedAlert.distribute(_recipients(RECIPIENT_A, RECIPIENT_B));
+
+        vm.prank(RECIPIENT_A);
+        cappedAlert.burn();
+
+        assertEq(cappedAlert.totalIssued(), 2);
+        assertEq(cappedAlert.totalSupply(), 1);
+        assertEq(cappedAlert.balanceOf(RECIPIENT_A), 0);
+        assertTrue(cappedAlert.wasAlerted(RECIPIENT_A));
+
+        _assertDistributionRevertsAtomically(
+            cappedAlert,
+            AUTHORITY,
+            _recipients(RECIPIENT_C),
+            abi.encodeWithSelector(RepMigrationAlert.DistributionCapExceeded.selector, 3, 2)
+        );
+    }
+
     function test_RevertWhen_DistributingAfterFinalization() public {
         vm.prank(AUTHORITY);
         alert.finalize();
@@ -320,6 +398,144 @@ contract RepMigrationAlertTest is Test {
             _recipients(RECIPIENT_A),
             abi.encodeWithSelector(RepMigrationAlert.DistributionAlreadyClosed.selector)
         );
+    }
+
+    function test_ActiveHolderBurnsBeforeFinalization() public {
+        _distribute(RECIPIENT_A);
+
+        assertFalse(alert.finalized());
+        vm.expectEmit(true, true, false, true, address(alert));
+        emit RepMigrationAlert.Transfer(RECIPIENT_A, address(0), 1);
+
+        vm.prank(RECIPIENT_A);
+        alert.burn();
+
+        assertFalse(alert.finalized());
+        assertEq(alert.balanceOf(RECIPIENT_A), 0);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.balanceOf(RECIPIENT_B), 0);
+        assertFalse(alert.wasAlerted(RECIPIENT_B));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 0);
+    }
+
+    function test_RevertWhen_NeverAlertedCallerBurns() public {
+        _assertBurnReverts(OUTSIDER);
+
+        assertEq(alert.totalIssued(), 0);
+        assertEq(alert.totalSupply(), 0);
+        assertEq(alert.balanceOf(OUTSIDER), 0);
+        assertFalse(alert.wasAlerted(OUTSIDER));
+    }
+
+    function test_RevertWhen_HolderBurnsRepeatedly() public {
+        _distribute(RECIPIENT_A);
+        vm.prank(RECIPIENT_A);
+        alert.burn();
+
+        _assertBurnReverts(RECIPIENT_A);
+
+        assertEq(alert.balanceOf(RECIPIENT_A), 0);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 0);
+    }
+
+    function test_RevertWhen_AuthorityWithoutAlertAttemptsToBurnAnotherHoldersAlert() public {
+        _distribute(RECIPIENT_A);
+
+        _assertBurnReverts(AUTHORITY);
+
+        assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 1);
+    }
+
+    function test_RevertWhen_DeployerWithoutAlertAttemptsToBurnAnotherHoldersAlert() public {
+        _distribute(RECIPIENT_A);
+
+        _assertBurnReverts(DEPLOYER);
+
+        assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 1);
+    }
+
+    function test_RevertWhen_OutsiderWithoutAlertAttemptsToBurnAnotherHoldersAlert() public {
+        _distribute(RECIPIENT_A);
+
+        _assertBurnReverts(OUTSIDER);
+
+        assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 1);
+    }
+
+    function test_AuthorityMayBurnItsOwnActiveAlert() public {
+        _distribute(AUTHORITY);
+
+        vm.prank(AUTHORITY);
+        alert.burn();
+
+        assertEq(alert.balanceOf(AUTHORITY), 0);
+        assertTrue(alert.wasAlerted(AUTHORITY));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 0);
+    }
+
+    function test_BurningOneOfSeveralRecipientsPreservesExactAccounting() public {
+        _distribute(RECIPIENT_A, RECIPIENT_B, RECIPIENT_C);
+
+        vm.prank(RECIPIENT_B);
+        alert.burn();
+
+        assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertEq(alert.balanceOf(RECIPIENT_B), 0);
+        assertEq(alert.balanceOf(RECIPIENT_C), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertTrue(alert.wasAlerted(RECIPIENT_B));
+        assertTrue(alert.wasAlerted(RECIPIENT_C));
+        assertEq(alert.totalIssued(), 3);
+        assertEq(alert.totalSupply(), 2);
+    }
+
+    function test_ActiveHolderBurnsAfterFinalization() public {
+        _distribute(RECIPIENT_A, RECIPIENT_B);
+        vm.prank(AUTHORITY);
+        alert.finalize();
+
+        vm.prank(RECIPIENT_A);
+        alert.burn();
+
+        assertTrue(alert.finalized());
+        assertEq(alert.balanceOf(RECIPIENT_A), 0);
+        assertEq(alert.balanceOf(RECIPIENT_B), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertTrue(alert.wasAlerted(RECIPIENT_B));
+        assertEq(alert.totalIssued(), 2);
+        assertEq(alert.totalSupply(), 1);
+
+        _assertDistributionRevertsAtomically(
+            AUTHORITY,
+            _recipients(RECIPIENT_C),
+            abi.encodeWithSelector(RepMigrationAlert.DistributionAlreadyClosed.selector)
+        );
+    }
+
+    function test_ContractRecipientBurnsItsOwnActiveAlert() public {
+        ContractRecipient contractRecipient = new ContractRecipient();
+        vm.prank(AUTHORITY);
+        alert.distribute(_recipients(address(contractRecipient)));
+
+        contractRecipient.burnAlert(alert);
+
+        assertEq(alert.balanceOf(address(contractRecipient)), 0);
+        assertTrue(alert.wasAlerted(address(contractRecipient)));
+        assertEq(alert.totalIssued(), 1);
+        assertEq(alert.totalSupply(), 0);
     }
 
     function test_RevertWhen_OrdinaryCallerTransfersPositiveValue() public {
@@ -400,6 +616,7 @@ contract RepMigrationAlertTest is Test {
         alert.finalize();
 
         assertTrue(alert.finalized());
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
         assertEq(alert.authority(), AUTHORITY);
     }
@@ -410,6 +627,7 @@ contract RepMigrationAlertTest is Test {
         alert.finalize();
 
         assertFalse(alert.finalized());
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
     }
 
@@ -417,6 +635,7 @@ contract RepMigrationAlertTest is Test {
         vm.prank(AUTHORITY);
         alert.finalize();
 
+        uint256 issuedBefore = alert.totalIssued();
         uint256 supplyBefore = alert.totalSupply();
         vm.recordLogs();
         vm.prank(AUTHORITY);
@@ -425,12 +644,14 @@ contract RepMigrationAlertTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         assertTrue(alert.finalized());
+        assertEq(alert.totalIssued(), issuedBefore);
         assertEq(alert.totalSupply(), supplyBefore);
         assertEq(logs.length, 0);
     }
 
     function test_FinalizeBelowCapPreservesBalancesAndSupply() public {
         _distribute(RECIPIENT_A, RECIPIENT_B);
+        uint256 issuedBefore = alert.totalIssued();
         uint256 supplyBefore = alert.totalSupply();
 
         vm.prank(AUTHORITY);
@@ -439,8 +660,11 @@ contract RepMigrationAlertTest is Test {
         assertTrue(alert.finalized());
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
         assertEq(alert.balanceOf(RECIPIENT_B), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertTrue(alert.wasAlerted(RECIPIENT_B));
+        assertEq(alert.totalIssued(), issuedBefore);
         assertEq(alert.totalSupply(), supplyBefore);
-        assertLt(alert.totalSupply(), alert.distributionCap());
+        assertLt(alert.totalIssued(), alert.distributionCap());
     }
 
     function test_FinalizeExactlyAtCapPreservesBalancesAndSupply() public {
@@ -453,6 +677,9 @@ contract RepMigrationAlertTest is Test {
         assertTrue(cappedAlert.finalized());
         assertEq(cappedAlert.balanceOf(RECIPIENT_A), 1);
         assertEq(cappedAlert.balanceOf(RECIPIENT_B), 1);
+        assertTrue(cappedAlert.wasAlerted(RECIPIENT_A));
+        assertTrue(cappedAlert.wasAlerted(RECIPIENT_B));
+        assertEq(cappedAlert.totalIssued(), cappedAlert.distributionCap());
         assertEq(cappedAlert.totalSupply(), cappedAlert.distributionCap());
     }
 
@@ -461,11 +688,14 @@ contract RepMigrationAlertTest is Test {
         alert.finalize();
 
         assertTrue(alert.finalized());
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
     }
 
-    function test_FinalizationEventContainsAuthorityAndFinalSupply() public {
+    function test_FinalizationEventContainsAuthorityAndFinalIssuedAfterBurn() public {
         _distribute(RECIPIENT_A, RECIPIENT_B, RECIPIENT_C);
+        vm.prank(RECIPIENT_B);
+        alert.burn();
 
         vm.recordLogs();
         vm.prank(AUTHORITY);
@@ -478,6 +708,25 @@ contract RepMigrationAlertTest is Test {
         assertEq(logs[0].topics[0], FINALIZED_TOPIC);
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(AUTHORITY))));
         assertEq(abi.decode(logs[0].data, (uint256)), 3);
+        assertEq(alert.totalIssued(), 3);
+        assertEq(alert.totalSupply(), 2);
+    }
+
+    function test_FinalizationAfterBurnPreservesBothCounters() public {
+        _distribute(RECIPIENT_A, RECIPIENT_B, RECIPIENT_C);
+        vm.prank(RECIPIENT_A);
+        alert.burn();
+        uint256 issuedBefore = alert.totalIssued();
+        uint256 supplyBefore = alert.totalSupply();
+
+        vm.prank(AUTHORITY);
+        alert.finalize();
+
+        assertTrue(alert.finalized());
+        assertEq(alert.totalIssued(), issuedBefore);
+        assertEq(alert.totalSupply(), supplyBefore);
+        assertEq(alert.balanceOf(RECIPIENT_A), 0);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
     }
 
     function test_FinalizationPermanentlyClosesDistribution() public {
@@ -498,6 +747,9 @@ contract RepMigrationAlertTest is Test {
         assertTrue(alert.finalized());
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
         assertEq(alert.balanceOf(RECIPIENT_B), 0);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertFalse(alert.wasAlerted(RECIPIENT_B));
+        assertEq(alert.totalIssued(), 1);
         assertEq(alert.totalSupply(), 1);
     }
 
@@ -512,6 +764,9 @@ contract RepMigrationAlertTest is Test {
 
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
         assertEq(alert.balanceOf(RECIPIENT_B), 0);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertFalse(alert.wasAlerted(RECIPIENT_B));
+        assertEq(alert.totalIssued(), 1);
         assertEq(alert.totalSupply(), 1);
         assertEq(alert.allowance(RECIPIENT_A, AUTHORITY), 0);
     }
@@ -523,11 +778,17 @@ contract RepMigrationAlertTest is Test {
         (bool unfinalizeSuccess,) = address(alert).call(abi.encodeWithSignature("unfinalize()"));
         (bool mintSuccess,) = address(alert).call(abi.encodeWithSignature("mint(address)", RECIPIENT_A));
         (bool ownerSuccess,) = address(alert).call(abi.encodeWithSignature("owner()"));
+        (bool burnAmountSuccess,) = address(alert).call(abi.encodeWithSignature("burn(uint256)", 1));
+        (bool burnFromSuccess,) =
+            address(alert).call(abi.encodeWithSignature("burnFrom(address,uint256)", RECIPIENT_A, 1));
 
         assertFalse(unfinalizeSuccess);
         assertFalse(mintSuccess);
         assertFalse(ownerSuccess);
+        assertFalse(burnAmountSuccess);
+        assertFalse(burnFromSuccess);
         assertTrue(alert.finalized());
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
     }
 
@@ -538,6 +799,7 @@ contract RepMigrationAlertTest is Test {
 
         assertFalse(success);
         assertEq(address(alert).balance, 0);
+        assertEq(alert.totalIssued(), 0);
         assertEq(alert.totalSupply(), 0);
         assertFalse(alert.finalized());
     }
@@ -551,6 +813,8 @@ contract RepMigrationAlertTest is Test {
 
         assertEq(address(alert).balance, 1 ether);
         assertEq(alert.balanceOf(RECIPIENT_A), 1);
+        assertTrue(alert.wasAlerted(RECIPIENT_A));
+        assertEq(alert.totalIssued(), 1);
         assertEq(alert.totalSupply(), 1);
         assertTrue(alert.finalized());
     }
@@ -582,29 +846,59 @@ contract RepMigrationAlertTest is Test {
         address[] memory recipients,
         bytes memory revertData
     ) internal {
+        uint256 issuedBefore = target.totalIssued();
         uint256 supplyBefore = target.totalSupply();
         bool finalizedBefore = target.finalized();
         uint256[] memory balancesBefore = new uint256[](recipients.length);
+        bool[] memory alertedBefore = new bool[](recipients.length);
         for (uint256 index = 0; index < recipients.length; index++) {
             balancesBefore[index] = target.balanceOf(recipients[index]);
+            alertedBefore[index] = target.wasAlerted(recipients[index]);
         }
 
         vm.prank(caller);
         vm.expectRevert(revertData);
         target.distribute(recipients);
 
+        assertEq(target.totalIssued(), issuedBefore);
         assertEq(target.totalSupply(), supplyBefore);
         assertEq(target.finalized(), finalizedBefore);
         for (uint256 index = 0; index < recipients.length; index++) {
             assertEq(target.balanceOf(recipients[index]), balancesBefore[index]);
+            assertEq(target.wasAlerted(recipients[index]), alertedBefore[index]);
         }
         assertEq(target.balanceOf(address(0)), 0);
+        assertFalse(target.wasAlerted(address(0)));
+    }
+
+    function _assertBurnReverts(address caller) internal {
+        uint256 issuedBefore = alert.totalIssued();
+        uint256 supplyBefore = alert.totalSupply();
+        bool finalizedBefore = alert.finalized();
+        uint256 balanceBefore = alert.balanceOf(caller);
+        bool alertedBefore = alert.wasAlerted(caller);
+
+        vm.recordLogs();
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(RepMigrationAlert.NoAlertBalance.selector, caller));
+        alert.burn();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertEq(logs.length, 0);
+        assertEq(alert.totalIssued(), issuedBefore);
+        assertEq(alert.totalSupply(), supplyBefore);
+        assertEq(alert.finalized(), finalizedBefore);
+        assertEq(alert.balanceOf(caller), balanceBefore);
+        assertEq(alert.wasAlerted(caller), alertedBefore);
     }
 
     function _assertTransferReverts(address caller, address recipient, uint256 value) internal {
+        uint256 issuedBefore = alert.totalIssued();
         uint256 supplyBefore = alert.totalSupply();
         uint256 callerBalanceBefore = alert.balanceOf(caller);
         uint256 recipientBalanceBefore = alert.balanceOf(recipient);
+        bool callerAlertedBefore = alert.wasAlerted(caller);
+        bool recipientAlertedBefore = alert.wasAlerted(recipient);
 
         vm.recordLogs();
         vm.prank(caller);
@@ -613,15 +907,21 @@ contract RepMigrationAlertTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         assertEq(logs.length, 0);
+        assertEq(alert.totalIssued(), issuedBefore);
         assertEq(alert.totalSupply(), supplyBefore);
         assertEq(alert.balanceOf(caller), callerBalanceBefore);
         assertEq(alert.balanceOf(recipient), recipientBalanceBefore);
+        assertEq(alert.wasAlerted(caller), callerAlertedBefore);
+        assertEq(alert.wasAlerted(recipient), recipientAlertedBefore);
     }
 
     function _assertTransferFromReverts(address caller, address owner, address recipient, uint256 value) internal {
+        uint256 issuedBefore = alert.totalIssued();
         uint256 supplyBefore = alert.totalSupply();
         uint256 ownerBalanceBefore = alert.balanceOf(owner);
         uint256 recipientBalanceBefore = alert.balanceOf(recipient);
+        bool ownerAlertedBefore = alert.wasAlerted(owner);
+        bool recipientAlertedBefore = alert.wasAlerted(recipient);
 
         vm.recordLogs();
         vm.prank(caller);
@@ -630,14 +930,20 @@ contract RepMigrationAlertTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         assertEq(logs.length, 0);
+        assertEq(alert.totalIssued(), issuedBefore);
         assertEq(alert.totalSupply(), supplyBefore);
         assertEq(alert.balanceOf(owner), ownerBalanceBefore);
         assertEq(alert.balanceOf(recipient), recipientBalanceBefore);
+        assertEq(alert.wasAlerted(owner), ownerAlertedBefore);
+        assertEq(alert.wasAlerted(recipient), recipientAlertedBefore);
     }
 
     function _assertApproveReverts(address caller, address spender, uint256 value) internal {
+        uint256 issuedBefore = alert.totalIssued();
         uint256 supplyBefore = alert.totalSupply();
         uint256 callerBalanceBefore = alert.balanceOf(caller);
+        bool callerAlertedBefore = alert.wasAlerted(caller);
+        bool spenderAlertedBefore = alert.wasAlerted(spender);
 
         vm.recordLogs();
         vm.prank(caller);
@@ -646,8 +952,11 @@ contract RepMigrationAlertTest is Test {
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         assertEq(logs.length, 0);
+        assertEq(alert.totalIssued(), issuedBefore);
         assertEq(alert.totalSupply(), supplyBefore);
         assertEq(alert.balanceOf(caller), callerBalanceBefore);
+        assertEq(alert.wasAlerted(caller), callerAlertedBefore);
+        assertEq(alert.wasAlerted(spender), spenderAlertedBefore);
         assertEq(alert.allowance(caller, spender), 0);
     }
 
@@ -676,8 +985,24 @@ contract RepMigrationAlertTest is Test {
 
 contract RepMigrationAlertGasTest is Test {
     address internal constant AUTHORITY = address(0xA11CE);
+    address internal constant NEVER_ALERTED = address(0xBAD);
     uint160 internal constant GAS_ADDRESS_BASE = uint160(0x1111111111111111111111111111111111111111);
     uint256 internal constant BASE_TRANSACTION_GAS = 21_000;
+
+    function test_Gas_Deployment() public {
+        vm.startSnapshotGas("RepMigrationAlert", "deployment");
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 500);
+        uint256 deploymentGas = vm.stopSnapshotGas();
+
+        emit log_named_string("measurement", "deployment");
+        emit log_named_uint("deployment gas", deploymentGas);
+        vm.snapshotValue("RepMigrationAlert-deployment-gas", "deployment", deploymentGas);
+
+        assertEq(target.authority(), AUTHORITY);
+        assertEq(target.distributionCap(), 500);
+        assertEq(target.totalIssued(), 0);
+        assertEq(target.totalSupply(), 0);
+    }
 
     function test_Gas_Distribute_001() public {
         _measureSuccessfulDistribution(1, "distribute-001");
@@ -804,6 +1129,7 @@ contract RepMigrationAlertGasTest is Test {
         bytes memory callData = abi.encodeCall(target.distribute, (_gasRecipients(cap)));
 
         _measureCall(target, AUTHORITY, callData, true, bytes4(0), "cap-boundary-success");
+        assertEq(target.totalIssued(), cap);
         assertEq(target.totalSupply(), cap);
     }
 
@@ -826,12 +1152,155 @@ contract RepMigrationAlertGasTest is Test {
 
         _measureCall(
             target,
-            address(0xBAD),
+            NEVER_ALERTED,
             abi.encodeCall(target.distribute, (_gasRecipients(500))),
             false,
             RepMigrationAlert.UnauthorizedCaller.selector,
             "revert-unauthorized"
         );
+    }
+
+    function test_Gas_FirstBurn() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 1);
+        address recipient = _gasRecipients(1)[0];
+        vm.prank(AUTHORITY);
+        target.distribute(_singleRecipient(recipient));
+
+        _measureCall(target, recipient, abi.encodeCall(target.burn, ()), true, bytes4(0), "burn-first");
+        assertEq(target.totalIssued(), 1);
+        assertEq(target.totalSupply(), 0);
+        assertTrue(target.wasAlerted(recipient));
+    }
+
+    function test_Gas_BurnAfterMultipleIssuances() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 100);
+        address[] memory recipients = _gasRecipients(100);
+        vm.prank(AUTHORITY);
+        target.distribute(recipients);
+
+        _measureCall(
+            target, recipients[99], abi.encodeCall(target.burn, ()), true, bytes4(0), "burn-after-multiple-issuances"
+        );
+        assertEq(target.totalIssued(), 100);
+        assertEq(target.totalSupply(), 99);
+    }
+
+    function test_Gas_BurnBeforeFinalization() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 10);
+        address[] memory recipients = _gasRecipients(10);
+        vm.prank(AUTHORITY);
+        target.distribute(recipients);
+
+        _measureCall(
+            target, recipients[0], abi.encodeCall(target.burn, ()), true, bytes4(0), "burn-before-finalization"
+        );
+        assertFalse(target.finalized());
+        assertEq(target.totalIssued(), 10);
+        assertEq(target.totalSupply(), 9);
+    }
+
+    function test_Gas_BurnAfterFinalization() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 10);
+        address[] memory recipients = _gasRecipients(10);
+        vm.startPrank(AUTHORITY);
+        target.distribute(recipients);
+        target.finalize();
+        vm.stopPrank();
+
+        _measureCall(target, recipients[0], abi.encodeCall(target.burn, ()), true, bytes4(0), "burn-after-finalization");
+        assertTrue(target.finalized());
+        assertEq(target.totalIssued(), 10);
+        assertEq(target.totalSupply(), 9);
+    }
+
+    function test_Gas_NeverAlertedBurnRevert() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 1);
+
+        _measureCall(
+            target,
+            NEVER_ALERTED,
+            abi.encodeCall(target.burn, ()),
+            false,
+            RepMigrationAlert.NoAlertBalance.selector,
+            "revert-burn-never-alerted"
+        );
+    }
+
+    function test_Gas_RepeatedBurnRevert() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 1);
+        address recipient = _gasRecipients(1)[0];
+        vm.prank(AUTHORITY);
+        target.distribute(_singleRecipient(recipient));
+        vm.prank(recipient);
+        target.burn();
+
+        _measureCall(
+            target,
+            recipient,
+            abi.encodeCall(target.burn, ()),
+            false,
+            RepMigrationAlert.NoAlertBalance.selector,
+            "revert-burn-repeated"
+        );
+    }
+
+    function test_Gas_ReissueBurnedRecipientRevert() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 2);
+        address recipient = _gasRecipients(1)[0];
+        address[] memory recipientArray = _singleRecipient(recipient);
+        vm.prank(AUTHORITY);
+        target.distribute(recipientArray);
+        vm.prank(recipient);
+        target.burn();
+
+        _measureCall(
+            target,
+            AUTHORITY,
+            abi.encodeCall(target.distribute, (recipientArray)),
+            false,
+            RepMigrationAlert.RecipientAlreadyNotified.selector,
+            "revert-reissue-burned"
+        );
+    }
+
+    function test_Gas_CapBoundaryAfterBurns() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 2);
+        address[] memory recipients = _gasRecipients(2);
+        vm.prank(AUTHORITY);
+        target.distribute(_singleRecipient(recipients[0]));
+        vm.prank(recipients[0]);
+        target.burn();
+
+        _measureCall(
+            target,
+            AUTHORITY,
+            abi.encodeCall(target.distribute, (_singleRecipient(recipients[1]))),
+            true,
+            bytes4(0),
+            "cap-boundary-after-burns"
+        );
+        assertEq(target.totalIssued(), 2);
+        assertEq(target.totalSupply(), 1);
+    }
+
+    function test_Gas_CapOverflowAfterBurnsRevert() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 1);
+        address[] memory recipients = _gasRecipients(2);
+        vm.prank(AUTHORITY);
+        target.distribute(_singleRecipient(recipients[0]));
+        vm.prank(recipients[0]);
+        target.burn();
+
+        _measureCall(
+            target,
+            AUTHORITY,
+            abi.encodeCall(target.distribute, (_singleRecipient(recipients[1]))),
+            false,
+            RepMigrationAlert.DistributionCapExceeded.selector,
+            "revert-cap-overflow-after-burns"
+        );
+        assertEq(target.totalIssued(), 1);
+        assertEq(target.totalSupply(), 0);
     }
 
     function test_Gas_Finalization() public {
@@ -840,6 +1309,20 @@ contract RepMigrationAlertGasTest is Test {
         target.distribute(_gasRecipients(100));
 
         _measureCall(target, AUTHORITY, abi.encodeCall(target.finalize, ()), true, bytes4(0), "finalize-success");
+    }
+
+    function test_Gas_FinalizationAfterBurns() public {
+        RepMigrationAlert target = new RepMigrationAlert(AUTHORITY, 100);
+        address[] memory recipients = _gasRecipients(100);
+        vm.prank(AUTHORITY);
+        target.distribute(recipients);
+        vm.prank(recipients[0]);
+        target.burn();
+
+        _measureCall(target, AUTHORITY, abi.encodeCall(target.finalize, ()), true, bytes4(0), "finalize-after-burns");
+        assertEq(target.totalIssued(), 100);
+        assertEq(target.totalSupply(), 99);
+        assertTrue(target.finalized());
     }
 
     function test_Gas_RepeatedFinalizationRevert() public {
@@ -864,7 +1347,9 @@ contract RepMigrationAlertGasTest is Test {
         bytes memory callData = abi.encodeCall(target.distribute, (_gasRecipients(size)));
 
         _measureCall(target, AUTHORITY, callData, true, bytes4(0), label);
+        assertEq(target.totalIssued(), size);
         assertEq(target.totalSupply(), size);
+        assertTrue(target.wasAlerted(_gasRecipients(size)[0]));
     }
 
     function _measureCall(
@@ -929,6 +1414,11 @@ contract RepMigrationAlertGasTest is Test {
                 highSuffixByte++;
             }
         }
+    }
+
+    function _singleRecipient(address recipient) internal pure returns (address[] memory recipients) {
+        recipients = new address[](1);
+        recipients[0] = recipient;
     }
 
     function _max(uint256 left, uint256 right) internal pure returns (uint256) {
