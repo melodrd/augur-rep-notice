@@ -1,247 +1,175 @@
 # Contract Validation
 
-Status: current local evidence as of 2026-07-16
+Status: current local evidence as of 2026-07-17.
 
-This document records reproducible evidence for the current `RepMigrationAlert` candidate. It is not an audit, does not prove that vulnerabilities are absent, and does not establish recipient, operational, or deployment readiness.
+This document records reproducible evidence for `MigrateRepV2Token`. It is not an audit, does not prove that vulnerabilities are absent, and does not establish recipient, operational, or deployment readiness. All figures come from the checked-in configuration and the local toolchain; no RPC, wallet, key, or live chain was involved.
 
 ## Candidate
 
 | Item | Value |
 | --- | --- |
-| Production source commit | `c073983edf3ef838c465734c1083ca8e8fc795b3` |
-| Contract | `src/RepMigrationAlert.sol` |
+| Contract | `src/MigrateRepV2Token.sol` |
+| Inheritance | `ERC20` (OpenZeppelin v5.6.1) only |
 | Solidity | `0.8.36` |
 | EVM target | `osaka` |
 | Optimizer | enabled, 200 runs |
 | Via IR | disabled |
 | Forge | `1.7.1` |
+| OpenZeppelin Contracts | `v5.6.1` at `5fd1781b1454fd1ef8e722282f86f9293cacf256` |
 | forge-std | `v1.16.1` at `620536fa5277db4e3fd46772d5cbc1ea0696fb43` |
 | Slither | `0.11.5` |
 | Bun | `1.3.14` |
 
-The checked-in `foundry.toml` is the canonical build configuration. Compilation completed without Solidity diagnostics.
+The checked-in `foundry.toml` is the canonical build configuration. Compilation completed without Solidity diagnostics, and `forge lint src script` reported no findings.
 
-## Review findings
+## Metadata and construction
 
-The production source was reviewed line by line for construction, metadata, recipient states, accounting, authorization, validation precedence, atomicity, burn, finalization, events, disabled movement, and forbidden surfaces.
+`name() == "MIGRATE REPV2"`, `symbol() == "MREP2"`, `decimals() == 18` (inherited, not overridden), `TOKEN_PER_RECIPIENT() == 1e18`, `MAX_BATCH_SIZE() == 200`. At construction the whole `recipientCap * 1e18` supply is minted to `address(this)`; the deployer and distributor hold zero, `totalInitialRecipients` is zero, and `distributionFinalized` is false. There is no callable function that increases `totalSupply()`.
 
-| Severity | Open findings |
-| --- | ---: |
-| Critical | 0 |
-| High | 0 |
-| Medium | 0 |
-| Low | 0 |
-
-The review observed no defect in the tested paths. The hard batch ceiling and explicit EVM pin resolved the two prior release-blocking source/configuration gaps.
-
-Distribution validation order is:
+## Distribution validation order
 
 ```text
-authority -> finalized -> empty -> maximum batch -> lifetime cap -> recipient validation
+authorization -> finalized -> empty -> maximum batch -> recipient cap -> recipient validation
 ```
+
+Focused adjacent double-fault tests lock authorization > finalized, finalized > empty, maximum batch > recipient cap, and recipient cap > recipient validation. Recipient validation rejects the zero address and any prior initial recipient, including a duplicate earlier in the same batch, and every failure reverts the whole call atomically.
 
 ## Test evidence
 
 | Suite | Campaign | Result |
 | --- | ---: | --- |
-| Unit behavior tests | 77 | passed |
-| Isolated gas tests | 30 | passed |
-| Fuzz properties | 16 × 256 = 4,096 cases | passed |
-| Stateful invariant | 256 × 500 = 128,000 calls | passed |
-| Total Forge tests/properties | 124 | passed |
+| Unit (`test/MigrateRepV2Token.t.sol`) | 66 tests | passed |
+| Fuzz (`test/fuzz/`) | 7 properties x 128 runs | passed |
+| Invariant (`test/invariant/`) | 6 invariants x 16 runs x 64 depth = 1,024 calls each | passed |
+| Deploy script (`test/script/`) | 8 tests | passed |
+| Gas (`test/gas/`) | 14 tests | passed |
+| Total | 101 tests | passed |
 
-The invariant handler targets 27 reviewed selectors. Foundry reported 128,000 calls, zero handler reverts, and zero discards. The reference model independently tracks permanent issuance, active supply, burned count, finalization, permissions, movement failures, and recipient lifecycle.
+The invariant handler drives distribution, transfers, approvals, `transferFrom`, and finalization over a fixed actor pool with zero reverts and zero discards, reconciling total supply, the recipient cap, the full balance set, permanent history, reserve accounting, and post-finalization distribution rejection.
 
-Focused ceiling tests prove:
+Approximate durations (local):
 
-- `MAX_BATCH_SIZE()` is 500;
-- exactly 500 unique recipients succeed;
-- 501 recipients revert with exact `BatchSizeExceeded(501, 500)` data;
-- oversized failure is atomic;
-- authorization and finalization take precedence over size;
-- size takes precedence over lifetime cap;
-- empty input retains its dedicated error; and
-- the measured 500-recipient transaction stays below the local regression ceiling.
+| Target | Duration |
+| --- | ---: |
+| `make test-unit` | ~0.003s Forge / ~0.1s wall |
+| `make test-fuzz` | ~0.5s |
+| `make test-invariant` | ~1.2s |
+| `make test` (ordinary, 87 tests) | ~1.8s |
+| `make gas` | ~0.04s |
+| `make check` | ~10s |
+| `make coverage` | ~4.4s |
+| `make check-deep` | ~5.7s |
 
-Three additional double-fault tests lock the remaining adjacent precedence boundaries: authority before finalized, finalized before empty, and lifetime cap before recipient validation.
+`make check-deep` runs the deep profile once (fuzz 256 runs; invariant 32 runs x 128 depth = 4,096 calls each).
 
 ## Production coverage
 
-| Metric | Production result | Repository result |
-| --- | ---: | ---: |
-| Lines | 100.00% (61/61) | 84.55% (279/330) |
-| Statements | 100.00% (51/51) | 91.46% (332/363) |
-| Branches | 100.00% (12/12) | 59.32% (35/59) |
-| Functions | 100.00% (13/13) | 96.36% (53/55) |
+| Metric | Production result |
+| --- | ---: |
+| Lines | 100.00% (41/41) |
+| Statements | 100.00% (40/40) |
+| Branches | 100.00% (12/12) |
+| Functions | 100.00% (3/3) |
 
-Coverage disables optimizer and via IR and emits source-anchor warnings for compiler-generated or optimized constructs. Those warnings are classified as instrumentation limitations; isolated optimized snapshots remain the gas authority.
+Coverage is reported for `src/` only (`--no-match-coverage '(test\|script)/'`) and excludes the gas suite. OpenZeppelin dependency code is not treated as project-owned coverage. The three counted functions are the constructor, `distribute`, and `finalizeDistribution`; inherited ERC-20 functions and auto-generated getters are OpenZeppelin's.
 
-## Size and deployment gas
+## Size and optimizer selection
 
-| Measure | Before | Ceiling-only build | Final | Final change |
+| Optimizer runs | Deployment (create-frame) | distribute/100 (Osaka) | transfer (Osaka) | Runtime bytes | Initcode bytes |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 727,761 | 4,826,466 | 46,795 | 3,008 | 4,275 |
+| 200 | 741,397 | 4,826,399 | 46,642 | 3,076 | 4,344 |
+| 1,000 | 805,508 | 4,826,377 | 46,620 | 3,396 | 4,664 |
+
+Distribution — the dominant campaign cost — is essentially optimizer-insensitive (about 1 gas per recipient across the whole range) because it is dominated by cold storage writes. Runs=200 captures the transfer-path savings (about 153 gas per transfer versus runs=1) at a small deployment cost, while runs=1,000 adds about 64k deployment gas and 320 runtime bytes for only about 22 additional gas per transfer. **Optimizer runs = 200 is selected.** Final runtime is 3,076 bytes (21,500 below the 24,576 limit); initcode is 4,344 bytes (44,808 below the 49,152 limit).
+
+## Batch-size selection
+
+The rewritten ERC-20 performs a cold recipient-balance write plus a cold history write per recipient, so per-recipient cost is far above the previous non-transferable contract. Worst-case successful calls (all-nonzero address bytes, cold recipients) measured as Osaka transaction gas `21000 + max(calldata + execution, 10 * tokens)`:
+
+| Recipients | Calldata gas | Execution gas | Osaka tx gas | % of 16,777,216 cap |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 712 | 72,388 | 94,100 | 0.6% |
+| 10 | 4,024 | 499,285 | 524,309 | 3.1% |
+| 25 | 9,544 | 1,210,780 | 1,241,324 | 7.4% |
+| 50 | 18,744 | 2,396,605 | 2,436,349 | 14.5% |
+| 100 | 37,144 | 4,768,255 | 4,826,399 | 28.8% |
+| 150 | 55,544 | 7,139,905 | 7,216,449 | 43.0% |
+| **200** | **73,944** | **9,511,555** | **9,606,499** | **57.3%** |
+| 250 | 92,344 | 11,883,205 | 11,996,549 | 71.5% |
+| 300 | 110,756 | 14,254,855 | 14,386,611 | 85.7% |
+
+`MAX_BATCH_SIZE = 200`. Its worst-case successful call is 9,606,499 gas — 57.3% of the 16,777,216 Osaka transaction gas cap and comfortably under the 70% target (11,744,051), with about 2.1M gas of headroom. 250 already exceeds the 70% target. The incremental cost is about 47,801 Osaka gas per recipient (47,433 execution, 368 calldata). Operations should normally use batches of about 100 and no more than 150; 200 is the hard ceiling, not the recommended size.
+
+## Gas figures with illustrative USDC
+
+Illustrative only: assumes ETH = $2,000 and shows 0.1 / 1 / 3 gwei. `USDC = gas * gwei * 1e-9 * 2000`. These are assumptions, not live prices.
+
+| Scenario | Osaka tx gas | @0.1 gwei | @1 gwei | @3 gwei |
 | --- | ---: | ---: | ---: | ---: |
-| Deployment gas | 511,565 | 524,795 | 499,345 | -12,220 |
-| Runtime bytecode | 2,389 bytes | 2,455 bytes | 2,328 bytes | -61 bytes |
-| Initcode | 2,654 bytes | 2,720 bytes | 2,593 bytes | -61 bytes |
+| Deployment (create-frame) | 741,397 | $0.148 | $1.483 | $4.448 |
+| distribute 1 | 94,100 | $0.019 | $0.188 | $0.565 |
+| distribute 100 | 4,826,399 | $0.965 | $9.653 | $28.958 |
+| distribute 150 | 7,216,449 | $1.443 | $14.433 | $43.299 |
+| distribute 200 (max) | 9,606,499 | $1.921 | $19.213 | $57.639 |
+| transfer (cold recipient) | 46,642 | $0.009 | $0.093 | $0.280 |
+| transfer (zero value) | 28,670 | $0.006 | $0.057 | $0.172 |
+| approve | 46,195 | $0.009 | $0.092 | $0.277 |
+| transferFrom (finite allowance) | 47,593 | $0.010 | $0.095 | $0.286 |
+| transferFrom (max allowance) | 47,156 | $0.009 | $0.094 | $0.283 |
+| finalizeDistribution | 47,575 | $0.010 | $0.095 | $0.286 |
+| unauthorized distribution (revert) | 22,780 | $0.005 | $0.046 | $0.137 |
+| empty batch (revert) | 24,042 | $0.005 | $0.048 | $0.144 |
+| 201 oversized (revert) | 206,780 | $0.041 | $0.414 | $1.241 |
+| cap overflow, 101 vs cap 100 (revert) | 114,780 | $0.023 | $0.230 | $0.689 |
+| duplicate at final index of 200 (revert) | 9,539,609 | $1.908 | $19.079 | $57.238 |
+| zero at final index of 200 (revert) | 9,539,142 | $1.908 | $19.078 | $57.235 |
 
-The final runtime is 22,248 bytes below the 24,576-byte limit. Final initcode is 46,559 bytes below the 49,152-byte limit.
+The Osaka calldata floor dominates the oversized and cap-overflow rejections, which revert before iterating. Late-duplicate and late-zero rejections cost almost as much as a full successful batch because they revert only at the final recipient.
+
+Incremental cost per recipient: about 47,801 Osaka gas (about $0.0096 at 0.1 gwei, $0.096 at 1 gwei, $0.287 at 3 gwei).
+
+Campaign totals (deployment plus distribution, operational batch size 100):
+
+| Recipients | Batches | Osaka gas | @0.1 gwei | @1 gwei | @3 gwei |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 100 | 1x100 | 5,567,796 | $1.11 | $11.14 | $33.41 |
+| 250 | 100+100+50 | 12,830,544 | $2.57 | $25.66 | $76.98 |
+| 500 | 5x100 | 24,873,392 | $4.97 | $49.75 | $149.24 |
+| 1,000 | 10x100 | 49,005,387 | $9.80 | $98.01 | $294.03 |
 
 ## Gas method
 
-The dedicated suite in `test/gas/RepMigrationAlertGas.t.sol` measures optimized calls in isolation. Successful distributions use fresh contracts, cold target state, entirely new recipients, and addresses whose 20 address bytes are nonzero. It records execution gas, exact calldata bytes and gas, the Osaka calldata floor, and:
+`test/gas/MigrateRepV2TokenGas.t.sol` measures optimized calls in isolation with fresh contracts and cold state. Execution gas is the call-frame gas from `vm.lastCallGas().gasTotalUsed`; calldata gas is computed from the encoded calldata (4 per zero byte, 16 per nonzero byte); the Osaka transaction gas applies the floor formula above. Deployment is the measured CREATE-frame gas (execution plus code deposit); a real creation transaction replaces the CREATE base with the 21,000 transaction base plus initcode calldata cost. `forge test --gas-report` remains diagnostic only. Reproduce with `make gas`.
 
-```text
-Osaka transaction gas =
-21,000 + max(calldata gas + execution gas, 10 × (calldata gas / 4))
-```
+## ABI, storage, and diagnostics
 
-`forge test --gas-report` remains diagnostic only because its instrumentation changes helper measurements. Authoritative final values come from:
+The callable surface is exactly the nine standard ERC-20 functions plus `TOKEN_PER_RECIPIENT`, `MAX_BATCH_SIZE`, `distributor`, `recipientCap`, `maximumSupply`, `totalInitialRecipients`, `distributionFinalized`, `wasInitialRecipient`, `distribute`, and `finalizeDistribution`. `make consistency` and manual inspection confirm no `mint`, `burn`, `owner`, `transferOwnership`, `grantRole`, `pause`, `blacklist`, `setFee`, `enableTrading`, `permit`, `delegate`, `claim`, `redeem`, `upgradeTo`, `withdraw`, `recoverToken`, `transferAndCall`, or `approveAndCall` selector.
 
-```bash
-FOUNDRY_SNAPSHOTS=/tmp/rep-alert-final-snapshot-values \
-  forge snapshot --snap /tmp/rep-alert-final-gas.snapshot
-```
+Storage (slots 0-4 are OpenZeppelin ERC-20): `totalInitialRecipients` (slot 5), `distributionFinalized` (slot 6), `wasInitialRecipient` (slot 7). Immutables (`distributor`, `recipientCap`, `maximumSupply`) and constants occupy no mutable storage.
 
-## Successful distribution gas
+Events: standard `Transfer` and `Approval`, plus `DistributionFinalized(address,uint256,uint256)`. Errors: ten project custom errors plus the six inherited `IERC20Errors`, none wrapped or duplicated.
 
-| Recipients | Calldata bytes | Calldata gas | Execution gas | Final Osaka total | Before | Change |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 100 | 712 | 71,583 | 93,295 | 93,419 | -124 |
-| 10 | 388 | 4,024 | 291,354 | 316,378 | 317,852 | -1,474 |
-| 25 | 868 | 9,544 | 657,639 | 688,183 | 691,907 | -3,724 |
-| 50 | 1,668 | 18,744 | 1,268,114 | 1,307,858 | 1,315,332 | -7,474 |
-| 100 | 3,268 | 37,144 | 2,489,064 | 2,547,208 | 2,562,182 | -14,974 |
-| 200 | 6,468 | 73,944 | 4,930,964 | 5,025,908 | 5,055,882 | -29,974 |
-| 500 | 16,068 | 184,356 | 12,256,664 | 12,462,020 | 12,536,994 | -74,974 |
-
-The final incremental Osaka cost is approximately 24,787 gas per additional recipient, including approximately 24,419 execution gas and 368 calldata gas.
-
-The 500-recipient result is 2,537,980 gas below the test's 15,000,000 local ceiling. It uses 83.08% of that ceiling. Twice the measured transaction is 24,924,040 gas; deployment preparation must independently confirm target-chain conditions and stricter tooling constraints. The local ceiling is regression evidence, not a live-chain gas-limit observation.
-
-## Other gas paths
-
-| Scenario | Final Osaka total | Result |
-| --- | ---: | --- |
-| Successful burn | 33,341 | succeeded |
-| Never-alerted or repeated burn | 23,501 | reverted |
-| Successful finalization | 47,137 | succeeded |
-| Repeated finalization | 23,481 | reverted |
-| Empty batch | 24,042 | reverted |
-| 501-recipient batch | 482,810 | reverted |
-| 500-recipient cap overflow | 481,890 | reverted |
-| Duplicate at final index of 500 | 12,395,928 | reverted |
-| Reissue burned recipient | 29,203 | reverted |
-
-The Osaka calldata floor dominates the large batches that reject before significant execution.
-
-## Gas optimization review
-
-Accepted: the private enum-backed status mapping was replaced with one `mapping(address => uint256)` and three named full-word constants for `NeverAlerted`, `Active`, and `Burned`. Only the values 1 and 2 are privately written; zero remains the mapping default. Observable states, ABI, events, storage slots, and transitions are unchanged. Existing unit, fuzz, invariant, and gas suites observed no behavioral difference in the tested paths.
-
-Relative to the ceiling-only build, this saves:
-
-- 25,450 deployment gas;
-- 127 runtime and initcode bytes;
-- exactly 150 gas per successful recipient, or 75,000 at 500; and
-- 147 gas per successful burn.
-
-Rejected after review:
-
-- explicit unchecked loop increments: compiler output already removes useful increment-overflow work;
-- unchecked counter or burn arithmetic: only small fixed savings at reduced defensive clarity;
-- packed counters or status bits: less auditable and unnecessary;
-- two-pass recipient validation: more reads and more complex control flow;
-- extra mappings, removed counters, assembly, or ABI reduction: prohibited or behavior-changing; and
-- immutable caching, `msg.sender` event substitution, or visibility changes: no meaningful optimized-output benefit.
-
-## ABI and storage
-
-The ABI contains one constructor, 18 callable functions, two events, and 13 custom errors. Relative to the prior public surface, it adds only:
-
-```text
-MAX_BATCH_SIZE()                              0xcfdbf254
-BatchSizeExceeded(uint256,uint256)            0xf80a4845
-```
-
-All existing selectors and both event topics are unchanged. Inspection confirms no owner, role, mint, delegated burn, permit, pause, recovery, withdrawal, payable, fallback, receive, arbitrary-call, proxy, upgrade, REP, migration-contract, `delegatecall`, or `selfdestruct` surface.
-
-| Slot | Variable | Type |
-| ---: | --- | --- |
-| 0 | `totalIssued` | `uint256` |
-| 1 | `totalSupply` | `uint256` |
-| 2 | `finalized` | `bool` |
-| 3 | `_status` | `mapping(address => uint256)` |
-
-Slot positions and count are unchanged. The accepted optimization changes only the private slot-3 value type from enum-backed status to full-word status. Immutables and constants occupy no mutable storage.
-
-## Diagnostics and CI
-
-Slither analyzed one production contract with 101 detectors and reported zero results. No finding was suppressed. This result is not an audit.
-
-Routine CI continues to run Solidity formatting, TypeScript formatting/linting/type checking/tests, Solidity build/tests/sizes, and Slither. Coverage remains a required local candidate check rather than a duplicate CI step because it disables canonical optimization, repeats the 128,000-call campaign, and emits known source-anchor warnings.
+Slither (`slither .`, filtered to project source) analyzed the compiled contract set with 101 detectors and reported **0 results**; no finding was suppressed. This is not an audit.
 
 ## Validation commands
 
 ```bash
-forge fmt
-forge fmt --check
-forge build
-forge build --sizes
-forge test
-forge test -vvv
-forge test --gas-report
-FOUNDRY_SNAPSHOTS=/tmp/rep-alert-final-snapshot-values \
-  forge snapshot --snap /tmp/rep-alert-final-gas.snapshot
-forge coverage
-slither .
-make check
-git diff --check
-forge inspect RepMigrationAlert abi
-forge inspect RepMigrationAlert methodIdentifiers
-forge inspect RepMigrationAlert storageLayout
-forge inspect RepMigrationAlert events
-forge inspect RepMigrationAlert errors
+make check         # fmt-check, lint, build+sizes, ordinary tests, ops-check, Slither, consistency
+make coverage      # production coverage, excludes the gas suite
+make gas           # isolated gas measurements
+make check-deep    # deep fuzz/invariant profile, once
+forge inspect MigrateRepV2Token abi
+forge inspect MigrateRepV2Token methodIdentifiers
+forge inspect MigrateRepV2Token storageLayout
+forge inspect MigrateRepV2Token events
+forge inspect MigrateRepV2Token errors
 ```
 
-## Deployment tooling and candidate freeze
-
-`script/DeployRepMigrationAlert.s.sol` is operational deployment tooling. It reads a non-secret authority and cap, rejects a zero authority or zero cap before broadcast preparation, and deploys exactly one `RepMigrationAlert` with those values passed explicitly. It is not part of the production contract and does not change production bytecode. The script and its tests live under `script/` and `test/`, which the production build and Slither exclude, so the compiled creation and runtime bytecode of `RepMigrationAlert` are byte-for-byte identical before and after the tooling was added.
-
-| Item | Value |
-| --- | --- |
-| Production source commit | `c073983edf3ef838c465734c1083ca8e8fc795b3` |
-| Tooling commit | `feat: add minimal deployment tooling` on branch `feat/sepolia-deployment-tooling` |
-| Solidity | `0.8.36` |
-| EVM target | `osaka` |
-| Optimizer | enabled, 200 runs |
-| Via IR | disabled |
-| Expected constructor | `constructor(address authority_, uint256 distributionCap_)` |
-
-Regenerate the frozen artifacts from the canonical build rather than trusting precomputed values:
-
-```bash
-forge inspect RepMigrationAlert bytecode
-forge inspect RepMigrationAlert deployedBytecode
-forge inspect RepMigrationAlert abi
-forge inspect RepMigrationAlert storageLayout
-```
-
-Hash the creation and runtime bytecode to compare the production contract before and after the tooling change:
-
-```bash
-forge inspect RepMigrationAlert bytecode | sha256sum
-forge inspect RepMigrationAlert deployedBytecode | sha256sum
-```
-
-Any production-bytecode difference between the production source commit and the tooling commit is a stop condition.
-
-## Known limitations and remaining work
+## Known limitations
 
 - No formal audit or independent human release review has occurred.
-- The local gas ceiling is not a target-chain observation. No approved target-chain block gas limit or evidence for the required 50% maximum-batch gate exists yet; deployment preparation and Sepolia must reconfirm execution, calldata, and transaction-tool behavior.
-- Recipient sources, snapshot, migration semantics, filters, manifest, numeric deployment cap, and tooling remain unapproved or unimplemented.
-- No fork, RPC, wallet, deployment, source-verification, transaction, or live-chain rehearsal was performed.
-- Production EOA evidence, canonical official URL, canaries, incident ownership, deployment hashes, and unsigned artifacts remain release-gated.
-- Third-party display remains unguaranteed.
-
-The next stage is minimal deployment tooling and a controlled Sepolia rehearsal after explicit human authorization.
+- Gas figures are local measurements, not target-chain observations; deployment preparation must reconfirm execution, calldata, and transaction-tool behavior against approved chain conditions.
+- Recipient sources, snapshot, migration semantics, filters, manifest, the numeric `recipientCap`, and the production distributor remain unapproved or out of scope.
+- No fork, RPC, wallet, deployment, source-verification, or live-chain rehearsal was performed.
+- Automatic wallet display and third-party reputation labels are not guaranteed.

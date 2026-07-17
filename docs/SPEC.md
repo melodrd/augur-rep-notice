@@ -2,184 +2,132 @@
 
 ## Purpose
 
-`CHECK AUGUR REP MIGRATION` is a minimal, non-economic on-chain alert. The authority may issue one non-transferable unit to each approved address. An active holder may optionally burn only their own unit.
+`MigrateRepV2Token` (MIGRATE REPV2 / `MREP2`) is a conventional, transferable, fixed-supply ERC-20 notice token. The entire maximum supply is created once during construction and held by the token contract itself. The immutable distributor sends one whole token to each selected address through `distribute`, then permanently closes distribution with `finalizeDistribution`. Every other behavior is standard OpenZeppelin ERC-20.
 
-The alert is not REP, migrated REP, replacement REP, a claim, a reward, a governance asset, or an asset with value. Receiving it performs no migration, grants no right, proves neither REP ownership nor migration eligibility, and requires no action.
+MREP2 is a **notice token**. It is not REP, REPv2, a migration claim, migration eligibility proof, redemption right, governance right, reward, or a project-supported investment asset. Holding, transferring, or approving MREP2 performs no REP migration.
 
 This document is authoritative for contract behavior. Operational controls are in [OPERATIONS.md](OPERATIONS.md); current evidence is in [VALIDATION.md](VALIDATION.md).
+
+### Naming-risk disclosure
+
+The name `MIGRATE REPV2` and symbol `MREP2` could be read by users as an actual REPv2 asset or as an instruction to migrate. They are neither. Documentation and explorer metadata must state plainly that MREP2 is a notice token and not REPv2 itself, and that receiving it requires no action.
 
 ## Fixed metadata
 
 | Property | Value |
 | --- | --- |
-| Name | `CHECK AUGUR REP MIGRATION` |
-| Symbol | `MIGRATEREP` |
-| Decimals | `0` |
-| Unit per recipient | `1` |
-| Initial `totalIssued` | `0` |
-| Initial `totalSupply` | `0` |
+| Name | `MIGRATE REPV2` |
+| Symbol | `MREP2` |
+| Decimals | `18` (inherited OpenZeppelin default; not overridden) |
+| One token | `TOKEN_PER_RECIPIENT = 1 ether = 1e18` base units |
+| Maximum supply | `recipientCap * 1e18`, fixed at construction |
 
-Metadata is compiled into the contract and cannot change. The verified checksummed contract address published through official Augur sources is the canonical identity; matching metadata, source, ABI, price, or branding is not proof of authenticity.
+`decimals()` is the standard OpenZeppelin 18. The verified checksummed contract address published through official Augur sources is the canonical identity; matching metadata, source, ABI, price, or branding is not proof of authenticity.
 
 ## Architecture
 
-The production contract is standalone, non-upgradeable, and intentionally ERC-20-shaped without being transferable. It uses explicit state and makes no external calls.
+The production contract inherits only OpenZeppelin `ERC20` (v5.6.1) and adds a fixed-supply reserve distribution layer. It has:
 
-It has:
+- three immutables: `distributor`, `recipientCap`, `maximumSupply`;
+- two constants: `TOKEN_PER_RECIPIENT` (`1 ether`) and `MAX_BATCH_SIZE` (`200`);
+- two counters/flags: `totalInitialRecipients` and `distributionFinalized`;
+- one permanent history mapping: `wasInitialRecipient`;
+- one atomic array-based distribution path and one irreversible finalization path.
 
-- one nonzero constructor-supplied immutable `authority`;
-- one nonzero constructor-supplied immutable `distributionCap`;
-- one private status entry per address;
-- one atomic array-based issuance path;
-- one holder-only self-burn path; and
-- one irreversible finalization path.
+The whole supply is minted to `address(this)` in the constructor. The deployer and distributor receive no balance. No function can increase `totalSupply()` after construction, and no function other than `distribute` can move the reserve out of the contract. There is no owner, role, pause, mint, holder burn, tax, blacklist, reentrancy surface, or upgrade path.
 
-Construction issues nothing. The deployer receives no inventory or implicit privilege; only the address explicitly supplied as `authority` can distribute or finalize. The authority cannot be transferred, replaced, renounced, recovered, or delegated.
+## Construction
 
-The cap must equal the final approved manifest's unique-address count. It is a lifetime issuance limit, not an active-supply limit.
-
-## Recipient state and accounting
-
-Each address has exactly one of these states:
-
-```text
-NeverAlerted -> Active -> Burned
+```solidity
+constructor(address distributor_, uint256 recipientCap_) ERC20("MIGRATE REPV2", "MREP2")
 ```
 
-| State | `balanceOf(account)` | `wasAlerted(account)` |
-| --- | ---: | --- |
-| `NeverAlerted` | `0` | `false` |
-| `Active` | `1` | `true` |
-| `Burned` | `0` | `true` |
+Validation, in order: `distributor_` nonzero (`ZeroDistributor`), `recipientCap_` nonzero (`ZeroRecipientCap`), and `recipientCap_ * TOKEN_PER_RECIPIENT` non-overflowing (`RecipientCapOverflow`). It then sets the three immutables and mints `maximumSupply` to `address(this)`.
 
-No transition returns an address to an earlier state.
-
-- `totalIssued` is the number of unique addresses ever successfully alerted. It only increases.
-- `totalSupply` is the number of active, unburned units. It increases on issuance and decreases on self-burn.
-- `wasAlerted(account)` permanently distinguishes a never-alerted address from one that later burned.
-
-At all times:
+Initial state:
 
 ```text
-totalSupply <= totalIssued <= distributionCap
+totalSupply()              == maximumSupply == recipientCap * 1e18
+balanceOf(address(this))   == maximumSupply
+balanceOf(distributor)     == 0
+balanceOf(deployer)        == 0
+totalInitialRecipients     == 0
+distributionFinalized      == false
 ```
 
-Balances are always zero or one. The zero address is never alerted. Burning does not reduce `totalIssued`, restore cap headroom, or make an address eligible for reissuance.
+## Fixed-supply reserve
 
-## Public interface
-
-| Function or read | Behavior |
-| --- | --- |
-| `name()` | Returns the fixed name |
-| `symbol()` | Returns the fixed symbol |
-| `decimals()` | Returns `0` |
-| `authority()` | Returns the immutable authority |
-| `distributionCap()` | Returns the immutable lifetime cap |
-| `MAX_BATCH_SIZE()` | Returns the compile-time ceiling `500` |
-| `totalIssued()` | Returns permanent unique issuance |
-| `totalSupply()` | Returns active, unburned supply |
-| `balanceOf(address)` | Returns `0` or `1` |
-| `wasAlerted(address)` | Returns permanent alert history |
-| `finalized()` | Returns whether issuance is closed |
-| `allowance(address,address)` | Always returns `0` |
-| `distribute(address[])` | Atomically issues one unit per valid recipient |
-| `burn()` | Burns only the active caller's unit |
-| `finalize()` | Irreversibly closes issuance |
-| `transfer(address,uint256)` | Always reverts, including for value zero |
-| `transferFrom(address,address,uint256)` | Always reverts |
-| `approve(address,uint256)` | Always reverts |
+The reserve stays at `address(this)` until distributed. It is never minted to the deployer, distributor, an owner, or a treasury, so no privileged account can move it through ordinary transfers. The only exit is `distribute`. There is no reserve-recovery, rescue, or arbitrary transfer-from-contract function. Any reserve left after finalization is permanently locked; it is never burned, swept, or sent to a dead address.
 
 ## Distribution
 
-`distribute(address[] recipients)` serves both canaries and batches. Only the authority may call it before finalization. A successful call marks every recipient `Active`, increments both counters by the recipient count, and emits one issuance event per recipient in calldata order.
+```solidity
+function distribute(address[] calldata recipients) external
+```
 
-The hard contract ceiling is `MAX_BATCH_SIZE = 500`. It is compile-time, publicly readable, checked before iteration, independent of the lifetime cap, and cannot be changed. Operations should normally use batches of approximately 100–200 for easier review, signing, monitoring, and reconciliation.
+Only the immutable `distributor` may call it, only before finalization. Each valid recipient is marked `wasInitialRecipient` and receives exactly `TOKEN_PER_RECIPIENT` via the inherited `_transfer(address(this), recipient, ...)`, emitting the standard ERC-20 `Transfer(address(this), recipient, 1e18)`. After the loop, `totalInitialRecipients` increases once by the recipient count. The distributor may call it repeatedly with different batches until the cap is reached or distribution is finalized.
 
 Validation precedence is exact:
 
-1. caller is the authority;
-2. distribution is not finalized;
-3. the array is not empty;
-4. the array has at most 500 entries;
-5. the resulting `totalIssued` does not exceed `distributionCap`;
-6. each recipient, in calldata order, is nonzero and has never been alerted.
+1. caller is the distributor (`UnauthorizedCaller`);
+2. distribution is not finalized (`DistributionAlreadyFinalized`);
+3. the array is not empty (`EmptyRecipientArray`);
+4. the array has at most `MAX_BATCH_SIZE` entries (`BatchSizeExceeded`);
+5. the resulting lifetime count does not exceed `recipientCap` (`RecipientCapExceeded`);
+6. each recipient, in calldata order, is nonzero (`ZeroRecipient`) and not already an initial recipient (`RecipientAlreadyDistributed`).
 
-Any failure reverts the complete call, including earlier writes and events. Duplicates within a call are rejected by the same permanent-status check as recipients from earlier calls. Active and burned prior recipients are both ineligible.
+Any failure reverts the complete call, including earlier mapping writes, balance changes, `Transfer` events, and the counter update. A duplicate within one batch is rejected by the same `wasInitialRecipient` check that rejects a recipient from an earlier batch. The contract makes no external third-party calls.
 
-## Holder self-burn
+## Initial-recipient history
 
-`burn()` succeeds only when `msg.sender` is `Active`. It:
+`wasInitialRecipient(address)` records that an address received one token directly from the reserve through the authorized distribution. It does **not** mean the address currently holds MREP2, owns REP or REPv2, is eligible to migrate, or that any migration occurred. An initial recipient may transfer the token away and keep `wasInitialRecipient == true` with `balanceOf == 0`. An address that only received transferred tokens has `wasInitialRecipient == false` with a positive balance and remains eligible for exactly one direct distribution. Once true, the flag never becomes false. There is no on-chain recipient array or holder enumeration.
 
-- changes only the caller from `Active` to `Burned`;
-- reduces the caller's balance and `totalSupply` by one;
-- leaves `totalIssued` and `wasAlerted(msg.sender)` unchanged; and
-- emits `Transfer(msg.sender, address(0), 1)`.
+## Standard ERC-20 behavior
 
-Never-alerted and already-burned callers revert. No authority, deployer, operator, approved spender, or other account can burn for a holder. Burn remains available before and after finalization. It cannot erase transaction history, events, permanent alert history, or third-party cached records.
+`name`, `symbol`, `decimals`, `totalSupply`, `balanceOf`, `transfer`, `allowance`, `approve`, and `transferFrom` are the inherited OpenZeppelin implementations and are not overridden, nor are `_update`, `_transfer`, `_approve`, or `_spendAllowance`. Any holder may transfer any amount they own; balances may exceed one token; zero-value transfers succeed and emit `Transfer`; `transfer` and `approve` return `true`; finite allowances decrease and the maximum allowance is treated as infinite per OpenZeppelin; standard OpenZeppelin errors are preserved and not wrapped. Transfers, approvals, and `transferFrom` continue unchanged after finalization.
 
 ## Finalization
 
-Only the authority may call `finalize()`. A successful call sets `finalized` permanently and emits `DistributionFinalized(authority, totalIssued)`. It changes no recipient state or counter at that moment.
+```solidity
+function finalizeDistribution() external
+```
 
-Repeated finalization reverts. No issuance path remains after finalization, but an active holder may still burn. Consequently, `totalIssued` is fixed after finalization while `totalSupply` may decrease.
+Only the distributor may call it. A successful call sets `distributionFinalized = true` permanently and emits `DistributionFinalized(distributor, totalInitialRecipients, balanceOf(address(this)))`. Repeated finalization reverts (`DistributionAlreadyFinalized`). Finalization closes reserve distribution only; it does not freeze the token — holder transfers, approvals, and `transferFrom` all continue, total supply is unchanged, and unused reserve remains locked. The entire reserve need not be distributed before finalizing.
+
+## Supply semantics and invariants
+
+```text
+maximumSupply           = recipientCap * TOKEN_PER_RECIPIENT
+totalSupply()           == maximumSupply                       (always, after construction)
+distributed amount      = totalInitialRecipients * TOKEN_PER_RECIPIENT
+totalInitialRecipients  <= recipientCap
+wasInitialRecipient      only changes false -> true
+```
+
+`totalInitialRecipients` is the authoritative permanent distribution count. Because ordinary users may later transfer tokens back to `address(this)`, `balanceOf(address(this))` is not proof of the original remaining allocation once public transfers begin. Transfers never affect total supply, the recipient cap, `totalInitialRecipients`, or initial-recipient history.
 
 ## Events
 
 ```solidity
-event Transfer(address indexed from, address indexed to, uint256 value);
-event DistributionFinalized(address indexed authority, uint256 finalIssued);
+event Transfer(address indexed from, address indexed to, uint256 value);        // OpenZeppelin
+event Approval(address indexed owner, address indexed spender, uint256 value);   // OpenZeppelin
+event DistributionFinalized(
+    address indexed distributor, uint256 totalInitialRecipients, uint256 undistributedReserve
+);
 ```
 
-Issuance emits `Transfer(address(0), recipient, 1)`. Self-burn emits `Transfer(holder, address(0), 1)`. There is no on-chain batch identifier or manifest hash.
+Distribution emits the standard `Transfer(address(this), recipient, 1e18)` per recipient in calldata order; there is no custom transfer event, batch identifier, or manifest hash.
 
 ## Custom errors
 
-| Error | Condition |
-| --- | --- |
-| `ZeroAuthority()` | Constructor authority is zero |
-| `ZeroDistributionCap()` | Constructor cap is zero |
-| `UnauthorizedCaller(address caller)` | Caller is not the authority |
-| `DistributionAlreadyClosed()` | Distribution follows finalization |
-| `EmptyRecipientArray()` | Recipient array is empty |
-| `BatchSizeExceeded(uint256 provided, uint256 maximum)` | Recipient count exceeds 500 |
-| `DistributionCapExceeded(uint256 attemptedIssued, uint256 cap)` | Attempted lifetime issuance exceeds the cap |
-| `ZeroRecipient(uint256 index)` | Recipient at the reported index is zero |
-| `RecipientAlreadyNotified(address recipient)` | Recipient is duplicated, active, or burned |
-| `NoAlertBalance(address account)` | Caller has no active unit to burn |
-| `TransferDisabled()` | Transfer or transfer-from is attempted |
-| `ApprovalDisabled()` | Approval is attempted |
-| `FinalizationAlreadyCompleted()` | Finalization is repeated |
+`ZeroDistributor`, `ZeroRecipientCap`, `RecipientCapOverflow`, `UnauthorizedCaller(address)`, `DistributionAlreadyFinalized`, `EmptyRecipientArray`, `BatchSizeExceeded(uint256,uint256)`, `RecipientCapExceeded(uint256,uint256)`, `ZeroRecipient(uint256)`, `RecipientAlreadyDistributed(address)`.
+
+The single `DistributionAlreadyFinalized` covers both distribution-after-finalization and repeated finalization (the two overlapping finalization errors are consolidated). Inherited OpenZeppelin `IERC20Errors` are used unchanged for standard transfer and allowance failures and are not duplicated or wrapped. Errors carry no strings, links, instructions, or promotional text.
 
 ## Forbidden functionality
 
-The contract has no ownership or roles; authority transfer or recovery; secondary administrator; user mint or claim; delegated, authority, batch, or signature burn; permit or allowance mutation; pause; proxy or upgrade; `delegatecall`; `selfdestruct`; REP or migration-contract interaction; callback or hook; bridge or oracle; arbitrary external call; fallback or receive function; payable path; withdrawal or token recovery; mutable metadata; metadata URI; or migration URL in storage.
-
-Exceptionally forced ETH is inert and unrecoverable, and contract behavior does not depend on its ETH balance.
-
-## Security invariants
-
-- Only the immutable authority can distribute or finalize; authority compromise cannot bypass the cap.
-- Distribution is atomic, permanently rejects duplicate or burned recipients, and preserves calldata event order.
-- `balanceOf(account)` is binary; a positive balance implies permanent alert history.
-- `totalIssued` equals unique successful recipients; `totalSupply` equals active units.
-- Failed calls change no state and leave no persistent events.
-- Transfers and approvals cannot succeed, and allowance is always zero.
-- Only an active holder can burn, and only their own unit.
-- Finalization is irreversible, closes all issuance, and does not disable holder burn.
-- No external interaction, privilege-recovery, movement, upgrade, or economic capability exists.
+No holder burn (`ERC20Burnable` is not inherited; no `burn`/`burnFrom`); no owner, role, or authority-transfer system; no post-deployment, public, signature, or claim mint; no permit, pause, proxy, upgrade, `delegatecall`, or `selfdestruct`; no tax, fee, reflection, rebasing, liquidity, DEX/router detection, blacklist, allowlist, cooldown, or trading switch; no callback, hook, bridge, oracle, arbitrary external call, fallback, receive, payable path, withdrawal, or token recovery; no REP or migration-contract interaction; no mutable metadata, token URI, or migration URL in storage. Forced ETH is inert and unrecoverable, and behavior never depends on the contract's ETH balance.
 
 ## Acceptance criteria
 
-The candidate must pass unit, fuzz, stateful invariant, gas, coverage, ABI, storage-layout, compiler, and static-analysis review demonstrating:
-
-- exact construction, metadata, initial state, interface, errors, and events;
-- exact validation precedence and atomic rollback;
-- successful issuance at 500 and exact oversized rejection at 501;
-- cap-boundary success and over-cap rejection against `totalIssued`, including after burns;
-- binary balances, permanent history, counter invariants, and permanent duplicate prevention;
-- holder-only burn before and after finalization, with no delegated burn surface;
-- authorized irreversible finalization and rejection of every later issuance;
-- disabled movement and approval behavior before and after finalization; and
-- absence of every forbidden surface listed above.
-
-Independent review is required before deployment. Passing these criteria is evidence about tested behavior, not an audit or proof that vulnerabilities are absent.
+The candidate must pass unit, fuzz, invariant, gas, coverage, ABI, storage-layout, lint, and static-analysis review demonstrating exact construction, metadata, and initial state; the exact distribution validation precedence and atomic rollback; success at the `200`-recipient maximum and exact rejection at `201`; cap-boundary success and over-cap rejection; permanent, binary history and duplicate prevention; unrestricted standard ERC-20 behavior before and after finalization; irreversible finalization with continuing transfers; a fixed supply with no post-construction mint; and the absence of every forbidden surface. Passing these criteria is evidence about tested behavior, not an audit or proof that vulnerabilities are absent.
