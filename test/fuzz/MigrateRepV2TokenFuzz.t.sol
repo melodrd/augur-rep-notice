@@ -18,11 +18,31 @@ contract MigrateRepV2TokenFuzz is Test {
         token = new MigrateRepV2Token(DISTRIBUTOR, CAP);
     }
 
-    function _unique(uint256 n, uint256 seed) internal pure returns (address[] memory a) {
+    /// @dev Lowest generated recipient address, above the precompile range.
+    uint160 internal constant RECIPIENT_BASE = uint160(0x10000000);
+
+    /// @dev Width of one seed's disjoint address block.
+    uint160 internal constant SEED_STRIDE = uint160(1_000_000);
+
+    /// @dev Deterministic recipients that are unique by construction (consecutive integers in a
+    ///      per-seed block) and never address(0). `forbidden` — the token under test — is skipped
+    ///      explicitly, so no property depends on an address collision being unlikely.
+    function _uniqueExcluding(uint256 n, uint256 seed, address forbidden) internal pure returns (address[] memory a) {
+        require(n <= SEED_STRIDE, "seed block too small");
         a = new address[](n);
+        // Confine the seed to a block index so a fuzzed seed cannot overflow into another range.
+        uint160 next = RECIPIENT_BASE + uint160(seed % 1_000_000) * SEED_STRIDE;
         for (uint256 i = 0; i < n; ++i) {
-            a[i] = address(uint160(uint256(keccak256(abi.encode(seed, i)))));
+            while (next == 0 || address(next) == forbidden) {
+                ++next;
+            }
+            a[i] = address(next);
+            ++next;
         }
+    }
+
+    function _unique(uint256 n, uint256 seed) internal view returns (address[] memory a) {
+        a = _uniqueExcluding(n, seed, address(token));
     }
 
     function _distribute(address[] memory a) internal {
@@ -155,19 +175,50 @@ contract MigrateRepV2TokenFuzz is Test {
     /// @dev The lifetime cap is never exceeded across multiple distribution calls.
     function testFuzz_cap_never_exceeded(uint256 seed) public {
         MigrateRepV2Token capped = new MigrateRepV2Token(DISTRIBUTOR, 300);
+        // Adjacent seed blocks are disjoint by construction; bounding also keeps `seed + 1` in range.
+        seed = bound(seed, 0, 999_998);
+
         // Two batches that together would exceed the cap of 300.
-        address[] memory first = _unique(200, seed);
+        address[] memory first = _uniqueExcluding(200, seed, address(capped));
         vm.prank(DISTRIBUTOR);
         capped.distribute(first);
 
         // The cap check runs before recipient validation, so a second full-size batch is
         // rejected on lifetime accounting alone (200 + 200 = 400 > 300).
-        address[] memory second = _unique(200, uint256(keccak256(abi.encode(seed))));
+        address[] memory second = _uniqueExcluding(200, seed + 1, address(capped));
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.RecipientCapExceeded.selector, 400, 300));
         capped.distribute(second);
 
         assertEq(capped.totalInitialRecipients(), 200);
         assertLe(capped.totalInitialRecipients(), capped.recipientCap());
+    }
+
+    /// @dev The token contract at any valid index reverts the entire batch with the exact index,
+    ///      leaving no balance, no history flag, no counter change, and no contract-balance change.
+    function testFuzz_token_contract_recipient_is_atomic(uint256 n, uint256 badIndex, uint256 seed) public {
+        n = bound(n, 1, 20);
+        badIndex = bound(badIndex, 0, n - 1);
+
+        address[] memory r = _unique(n, seed);
+        r[badIndex] = address(token);
+
+        uint256 recipientsBefore = token.totalInitialRecipients();
+        uint256 contractBalanceBefore = token.balanceOf(address(token));
+
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, badIndex));
+        token.distribute(r);
+
+        assertEq(token.totalInitialRecipients(), recipientsBefore);
+        assertFalse(token.wasInitialRecipient(address(token)));
+        assertEq(token.balanceOf(address(token)), contractBalanceBefore);
+        assertEq(token.totalSupply(), token.maximumSupply());
+        for (uint256 i = 0; i < n; ++i) {
+            if (r[i] != address(token)) {
+                assertFalse(token.wasInitialRecipient(r[i]));
+                assertEq(token.balanceOf(r[i]), 0);
+            }
+        }
     }
 }

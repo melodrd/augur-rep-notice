@@ -24,11 +24,38 @@ contract MigrateRepV2TokenTest is Test {
 
     // --- helpers ---
 
-    function _recipients(uint256 n, uint256 seed) internal pure returns (address[] memory a) {
+    /// @dev Lowest generated recipient address. Above the precompile range and far below any
+    ///      CREATE-derived contract address.
+    uint160 internal constant RECIPIENT_BASE = uint160(0x10000000);
+
+    /// @dev Width of one seed's address range. Each seed owns a disjoint block, so recipients
+    ///      from different seeds can never collide.
+    uint160 internal constant SEED_STRIDE = uint160(1_000_000);
+
+    /// @dev Deterministic recipients that are unique by construction (consecutive integers in a
+    ///      per-seed block) and never address(0). `forbidden` — normally the token under test —
+    ///      is skipped explicitly. Correctness never depends on an address collision being
+    ///      cryptographically unlikely.
+    function _recipientsExcluding(uint256 n, uint256 seed, address forbidden)
+        internal
+        pure
+        returns (address[] memory a)
+    {
+        require(n <= SEED_STRIDE, "seed block too small");
         a = new address[](n);
+        uint160 next = RECIPIENT_BASE + uint160(seed) * SEED_STRIDE;
         for (uint256 i = 0; i < n; ++i) {
-            a[i] = address(uint160(uint256(keccak256(abi.encode(seed, i)))));
+            while (next == 0 || address(next) == forbidden) {
+                ++next;
+            }
+            a[i] = address(next);
+            ++next;
         }
+    }
+
+    /// @dev Recipients valid for the shared `token` fixture.
+    function _recipients(uint256 n, uint256 seed) internal view returns (address[] memory a) {
+        a = _recipientsExcluding(n, seed, address(token));
     }
 
     function _one(address who) internal pure returns (address[] memory a) {
@@ -109,6 +136,67 @@ contract MigrateRepV2TokenTest is Test {
     function test_constructor_reverts_on_zero_cap() public {
         vm.expectRevert(MigrateRepV2Token.ZeroRecipientCap.selector);
         new MigrateRepV2Token(DISTRIBUTOR, 0);
+    }
+
+    /// @dev Pins the prediction itself: the address computed from the deployer and its next nonce
+    ///      is the address the following CREATE actually produces. The self-distributor tests below
+    ///      rely on this, and it cannot be asserted inside them because an expected revert makes
+    ///      the reverted CREATE yield a placeholder address.
+    function test_computeCreateAddress_predicts_the_next_token_address() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        MigrateRepV2Token next = new MigrateRepV2Token(DISTRIBUTOR, CAP);
+        assertEq(address(next), predicted);
+    }
+
+    /// @dev A deployer can predict the address its next CREATE will produce and pass it as the
+    ///      distributor. The result would be permanently unusable: only the token contract could
+    ///      call distribute or finalizeDistribution, and it has no self-call mechanism.
+    function test_constructor_reverts_when_distributor_is_predicted_token_address() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
+        new MigrateRepV2Token(predicted, CAP);
+    }
+
+    /// @dev Precedence: zero distributor is rejected before the token-contract distributor check.
+    ///      The two are disjoint in practice (a contract is never at address(0)), so this pins the
+    ///      first position with a simultaneously-invalid cap.
+    function test_constructor_precedence_zero_distributor_before_zero_cap() public {
+        vm.expectRevert(MigrateRepV2Token.ZeroDistributor.selector);
+        new MigrateRepV2Token(address(0), 0);
+    }
+
+    /// @dev Precedence: the token-contract distributor check runs before the zero-cap check.
+    function test_constructor_precedence_self_distributor_before_zero_cap() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
+        new MigrateRepV2Token(predicted, 0);
+    }
+
+    /// @dev Precedence: the token-contract distributor check runs before the overflow check.
+    function test_constructor_precedence_self_distributor_before_overflow() public {
+        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
+        new MigrateRepV2Token(predicted, type(uint256).max / ONE + 1);
+    }
+
+    /// @dev An ordinary EOA distributor is unaffected by the self-address rejection.
+    function test_constructor_accepts_eoa_distributor() public {
+        MigrateRepV2Token eoa = new MigrateRepV2Token(ALICE, CAP);
+        assertEq(eoa.distributor(), ALICE);
+    }
+
+    /// @dev A contract distributor remains valid. A reviewed multisignature may legitimately hold
+    ///      distribution authority; only the token contract itself is rejected.
+    function test_constructor_accepts_contract_distributor() public {
+        // This test contract is a contract address other than the token being deployed.
+        MigrateRepV2Token viaContract = new MigrateRepV2Token(address(this), CAP);
+        assertEq(viaContract.distributor(), address(this));
+        assertGt(address(this).code.length, 0);
+
+        // It is usable: the contract distributor can actually distribute.
+        address[] memory r = _one(ALICE);
+        viaContract.distribute(r);
+        assertEq(viaContract.balanceOf(ALICE), ONE);
     }
 
     function test_constructor_reverts_on_cap_overflow() public {
@@ -299,6 +387,118 @@ contract MigrateRepV2TokenTest is Test {
         token.distribute(r);
     }
 
+    // ------------------------------------------------------------------
+    // Token contract as recipient
+    // ------------------------------------------------------------------
+
+    /// @dev Distributing to the token contract would self-transfer the unit, leaving the contract
+    ///      balance unchanged while still consuming one unit of recipientCap and permanently
+    ///      recording the token contract as an initial recipient. It is rejected outright.
+    function test_token_contract_recipient_fails_with_exact_index() public {
+        uint256 balanceBefore = token.balanceOf(address(token));
+
+        address[] memory r = _one(address(token));
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, 0));
+        token.distribute(r);
+
+        assertEq(token.totalInitialRecipients(), 0);
+        assertFalse(token.wasInitialRecipient(address(token)));
+        assertEq(token.balanceOf(address(token)), balanceBefore);
+        assertEq(token.balanceOf(address(token)), CAP * ONE);
+    }
+
+    /// @dev The rejection is atomic: valid recipients earlier in the batch keep no balance, no
+    ///      history flag, and no counter contribution.
+    function test_token_contract_recipient_reverts_whole_batch() public {
+        uint256 balanceBefore = token.balanceOf(address(token));
+
+        address[] memory r = new address[](3);
+        r[0] = ALICE;
+        r[1] = BOB;
+        r[2] = address(token);
+
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, 2));
+        token.distribute(r);
+
+        assertFalse(token.wasInitialRecipient(ALICE));
+        assertFalse(token.wasInitialRecipient(BOB));
+        assertFalse(token.wasInitialRecipient(address(token)));
+        assertEq(token.balanceOf(ALICE), 0);
+        assertEq(token.balanceOf(BOB), 0);
+        assertEq(token.totalInitialRecipients(), 0);
+        assertEq(token.balanceOf(address(token)), balanceBefore);
+        assertEq(token.totalSupply(), CAP * ONE);
+    }
+
+    /// @dev Only the token contract itself is rejected. An ordinary contract recipient — a
+    ///      multisignature, custody address, or smart wallet — is a valid recipient, and the
+    ///      contract never filters on bytecode presence.
+    function test_ordinary_contract_recipient_succeeds() public {
+        // A second token instance is simply a contract address that is not `token`.
+        address otherContract = address(new MigrateRepV2Token(DISTRIBUTOR, 1));
+        assertGt(otherContract.code.length, 0);
+
+        _distribute(_one(otherContract));
+
+        assertEq(token.balanceOf(otherContract), ONE);
+        assertTrue(token.wasInitialRecipient(otherContract));
+        assertEq(token.totalInitialRecipients(), 1);
+    }
+
+    /// @dev The test contract is another bytecode-bearing recipient and is equally valid.
+    function test_test_contract_recipient_succeeds() public {
+        _distribute(_one(address(this)));
+        assertEq(token.balanceOf(address(this)), ONE);
+        assertTrue(token.wasInitialRecipient(address(this)));
+    }
+
+    /// @dev Precedence: the zero address is rejected before the token contract.
+    function test_precedence_zero_before_token_contract() public {
+        address[] memory r = new address[](2);
+        r[0] = address(0);
+        r[1] = address(token);
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.ZeroRecipient.selector, 0));
+        token.distribute(r);
+    }
+
+    /// @dev Precedence: the token contract is rejected before the already-distributed check, for
+    ///      the same repeated address. Without the token-contract check, index 1 would report
+    ///      RecipientAlreadyDistributed instead.
+    function test_precedence_token_contract_before_duplicate_of_itself() public {
+        address[] memory r = new address[](2);
+        r[0] = address(token);
+        r[1] = address(token);
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, 0));
+        token.distribute(r);
+    }
+
+    /// @dev Precedence: the token contract is rejected before a prior recipient later in the batch.
+    function test_precedence_token_contract_before_prior_recipient() public {
+        _distribute(_one(ALICE));
+        address[] memory r = new address[](2);
+        r[0] = address(token);
+        r[1] = ALICE; // already distributed in the prior call
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, 0));
+        token.distribute(r);
+    }
+
+    /// @dev The outer precedence is unchanged: the recipient cap is still checked before any
+    ///      per-recipient validation, including the token contract.
+    function test_precedence_recipient_cap_before_token_contract() public {
+        MigrateRepV2Token capped = new MigrateRepV2Token(DISTRIBUTOR, 1);
+        address[] memory r = new address[](2);
+        r[0] = address(capped);
+        r[1] = address(capped);
+        vm.prank(DISTRIBUTOR);
+        vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.RecipientCapExceeded.selector, 2, 1));
+        capped.distribute(r);
+    }
+
     function test_recipient_from_earlier_batch_fails() public {
         _distribute(_one(ALICE));
         address[] memory r = new address[](2);
@@ -339,7 +539,7 @@ contract MigrateRepV2TokenTest is Test {
     function test_cap_boundary_succeeds() public {
         MigrateRepV2Token capped = new MigrateRepV2Token(DISTRIBUTOR, 5);
         vm.prank(DISTRIBUTOR);
-        capped.distribute(_recipients(5, 7));
+        capped.distribute(_recipientsExcluding(5, 7, address(capped)));
         assertEq(capped.totalInitialRecipients(), 5);
         assertEq(capped.recipientCap(), 5);
     }
@@ -347,9 +547,9 @@ contract MigrateRepV2TokenTest is Test {
     function test_cap_overflow_fails() public {
         MigrateRepV2Token capped = new MigrateRepV2Token(DISTRIBUTOR, 5);
         vm.prank(DISTRIBUTOR);
-        capped.distribute(_recipients(4, 7));
+        capped.distribute(_recipientsExcluding(4, 7, address(capped)));
         // 4 + 3 = 7 > 5
-        address[] memory more = _recipients(3, 8);
+        address[] memory more = _recipientsExcluding(3, 8, address(capped));
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.RecipientCapExceeded.selector, 7, 5));
         capped.distribute(more);
@@ -575,7 +775,7 @@ contract MigrateRepV2TokenTest is Test {
     function test_precedence_batch_maximum_before_recipient_cap() public {
         // cap smaller than the batch, and batch above MAX_BATCH_SIZE: size error wins.
         MigrateRepV2Token capped = new MigrateRepV2Token(DISTRIBUTOR, 10);
-        address[] memory r = _recipients(201, 1);
+        address[] memory r = _recipientsExcluding(201, 1, address(capped));
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.BatchSizeExceeded.selector, 201, 200));
         capped.distribute(r);
