@@ -63,10 +63,10 @@ Distribution flow: deploy (whole supply minted to the contract) → distributor 
 src/MigrateRepV2Token.sol            production ERC-20
 script/DeployMigrateRepV2Token.s.sol deployment script (embeds no account, key, RPC, or network)
 test/                                unit, fuzz, invariant, gas, and deploy-script tests
-ops/src/manifest.ts                  deterministic recipient manifest (derived cap, provenance)
+ops/src/manifest.ts                  lean recipient manifest (derived cap, provenance)
 ops/src/distribution-plan.ts         offline manifest-to-deployment binding and batch calldata
-ops/src/cli.ts                       offline manifest command (bun run manifest)
-ops/src/plan-cli.ts                  offline distribution-plan command (bun run plan)
+ops/src/io.ts                        shared offline CLI helpers (JSON read, safe write, checksums)
+ops/src/cli.ts                       offline CLI: manifest and plan subcommands (bun run ops)
 docs/SPEC.md                         authoritative contract behavior
 docs/OPERATIONS.md                   deployment, recipient, and communications controls
 docs/VALIDATION.md                   current local evidence

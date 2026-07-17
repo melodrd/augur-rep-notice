@@ -59,13 +59,15 @@ Canonical settings in `foundry.toml`: Solidity 0.8.36, EVM Osaka, optimizer enab
 
 ## TypeScript operations
 
-Bun is the sole JavaScript package manager; never use npm or pnpm, and never create their lockfiles. Install with `bun install --frozen-lockfile`. `tsc --noEmit` is mandatory type checking; Biome handles formatting and linting. Use viem, Zod, deterministic JSON/CSV, cryptographic checksums, and `bigint` for on-chain integers — never floating point. The recipient tooling must validate and normalize addresses, reject zero and duplicate addresses, sort canonically, batch within the operational size, store no personal data, and never repair an address, sign, or broadcast.
+Bun is the sole JavaScript package manager; never use npm or pnpm, and never create their lockfiles. Install with `bun install --frozen-lockfile`. `tsc --noEmit` is mandatory type checking; Biome handles formatting and linting. Use viem for address and ABI handling, deterministic JSON/CSV, cryptographic checksums, and `bigint` for on-chain integers — never floating point. Keep dependencies minimal and prefer plain explicit parsers to a schema library unless one materially improves boundary validation. The recipient tooling must validate and normalize addresses, reject the zero address and case-insensitive duplicates, sort canonically, batch within the operational size, store no personal data, and never repair an address, sign, or broadcast.
 
-- `recipientCap` is **derived** from the final unique recipient list and must never become a caller-supplied option again: that is what makes undisclosed headroom impossible. Empty recipient lists are rejected.
-- Provenance is mandatory and never invented, defaulted, or derived. Validate it; do not fill it in.
-- `canonicalRecipientsChecksum` covers the normalized array and must never be described as proving the original source data was unchanged; `provenance.sourceDataChecksum` is that proof.
-- `ops/src/distribution-plan.ts` is offline only. It must never gain an RPC call, a signer, or an authoritative nonce, fee, or gas figure, and must not grow into a general transaction framework.
-- Bump `MANIFEST_SCHEMA_VERSION` whenever a manifest field name or meaning changes.
+- The manifest and plan are **lean**: store only authoritative inputs and derive everything else (cap, maximum supply, batch split, counts) on demand. Do not reintroduce stored derived fields, per-batch or embedded self-checksums, or cross-field validation of duplicated values.
+- The recipient cap is **derived** from the final unique recipient list and must never become a caller-supplied option again: that is what makes undisclosed headroom impossible. Empty recipient lists are rejected.
+- Provenance is mandatory and never invented, defaulted, or derived. Validate its shape; do not fill it in. It is recorded and validated structurally, never independently verified.
+- `provenance.sourceChainId` (where the snapshot was read) and the plan's `targetChainId` (where MREP2 is deployed) are intentionally separate and must never be required to match: a mainnet snapshot must be able to drive a Sepolia plan.
+- Integrity is a detached hash, not a self-checksum: emit `manifest.json.sha256` and `plan.json.sha256` over the exact emitted bytes. Detached hashes detect accidental change; they do not prove approval or authenticity.
+- `ops/src/distribution-plan.ts` is offline only. It must never gain an RPC call, a signer, or an authoritative nonce, fee, or gas figure, and must not grow into a general transaction framework. It re-validates the manifest and decodes its own calldata before emitting a plan.
+- The manifest format is version 1 with no migration path: there is no production manifest requiring backward compatibility, so change the format cleanly rather than adding schema-version machinery.
 
 ## Safety boundary
 

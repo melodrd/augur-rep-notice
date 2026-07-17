@@ -55,27 +55,62 @@ EOAs; Safe and other smart-wallet contracts; centralized-exchange hot and cold w
 
 Do not attempt to resolve this on chain with a `code.length` filter. Contract recipients may be entirely legitimate — a multisignature or smart wallet is an ordinary user — and bytecode presence does not identify who controls an address or on whose behalf it held REP. The contract deliberately performs no bytecode check; it rejects only the zero address and the token contract itself.
 
+## Distribution workflow
+
+The path from an approved recipient list to a finalized distribution:
+
+```text
+recipient source data
+→ lean manifest          offline, human-approved recipient artifact
+→ derived cap            MREP2_RECIPIENT_CAP = the unique recipient count
+→ deployment             separately authorized human task
+→ lean distribution plan binds the manifest to the deployed token
+→ reviewed calldata      decoded and compared byte-for-byte before signing
+→ signed transactions    human-signed, one batch at a time
+→ reconciliation         events, counters, balances
+→ finalization           irreversible close
+```
+
+Two facts frame everything below:
+
+- **The contract never reads the manifest.** It is an offline, human-approved recipient artifact. The only value that crosses into the contract is the derived cap, copied by hand into `MREP2_RECIPIENT_CAP`.
+- **Detached hashes detect accidents, not adversaries.** `manifest.json.sha256` and `plan.json.sha256` catch an accidental edit, a truncated copy, or a stale file. They are public, unkeyed SHA-256 over the exact emitted bytes and prove neither human approval nor authenticity; that rests on the separately authorized review process.
+
 ## Recipient manifest
 
-The tooling in `ops/src/manifest.ts` prepares distribution off-chain and deterministically. It validates every address, rejects zero and duplicate addresses, normalizes for comparison, sorts by one canonical rule (ascending lowercase 20-byte hex), splits into batches no larger than the operational batch size, and records batch numbers, recipient counts, cumulative recipient counts, the expected remaining initial allocation after each batch, and cryptographic checksums (canonical recipients, per-batch, and full-manifest). It never repairs a malformed address, stores no personal data, and never signs, broadcasts, or reaches the network.
+The tooling in `ops/src/manifest.ts` prepares the recipient list off-chain and deterministically. It validates every address, rejects the zero address and case-insensitive duplicates, normalizes to EIP-55 checksum form, sorts by one canonical rule (ascending lowercase 20-byte hex), and rejects an empty list. It never repairs a malformed address, stores no personal data, and never signs, broadcasts, or reaches the network.
 
-**The recipient cap is derived, not supplied.** `recipientCap` equals the number of addresses in the final normalized unique list, and `maximumSupply` equals `recipientCap * TOKEN_PER_RECIPIENT`. The build API accepts no cap, so a manifest cannot carry discretionary supply or distribution headroom, and an empty recipient list is rejected. `MREP2_RECIPIENT_CAP` must be copied exactly from the approved manifest; it is never chosen independently, and never given a margin.
+The manifest stores only authoritative inputs — a version, provenance, batch size, and the canonical recipient list. Everything else is derived on demand and never stored: the recipient cap, maximum supply, batch split, and per-recipient counts are computed whenever they are displayed or needed. There are no embedded checksums, no per-batch records, and no schema-migration machinery — the format is version 1 and there is no other version.
 
-Every manifest requires provenance — explicit, human-supplied values that are validated but never invented: `chainId`, `snapshotBlockNumber`, `snapshotBlockHash`, `sourceContracts`, `sourceDataChecksum`, `rulesetId`, and `rulesetChecksum`. A manifest without them is not production-reviewable and the tooling refuses to build one.
+```json
+{
+  "version": 1,
+  "provenance": {
+    "sourceChainId": 1,
+    "snapshotBlockNumber": "12345678",
+    "snapshotBlockHash": "0x...",
+    "sourceContracts": ["0x..."],
+    "sourceDataSha256": "sha256:...",
+    "rulesetId": "rep-notice-v1",
+    "rulesetSha256": "sha256:..."
+  },
+  "batchSize": 100,
+  "recipients": ["0x..."]
+}
+```
 
-Two checksums answer two different questions, and neither substitutes for the other:
+**The recipient cap is derived, not supplied.** It equals the number of addresses in the canonical list, and maximum supply equals `recipientCap * TOKEN_PER_RECIPIENT`. The build accepts no cap, so a manifest cannot carry discretionary supply or distribution headroom, and an empty recipient list is rejected. `MREP2_RECIPIENT_CAP` must be copied exactly from the derived cap the tool prints; it is never chosen independently, and never given a margin.
 
-- `canonicalRecipientsChecksum` — computed over the normalized, deduplicated, sorted, checksummed recipient array. It proves the recipient array in the manifest is the array that was reviewed. It does **not** prove the original source data was unchanged: it is computed after normalization and sorting, not over the original input bytes.
-- `provenance.sourceDataChecksum` — the checksum of the frozen source data as extracted, before any transformation. This is the one that binds the manifest to its source.
+**Source and target chains are separate.** `provenance.sourceChainId` is the chain the snapshot was read from. It is intentionally independent of the plan's `targetChainId`, the chain MREP2 is deployed on. A real Ethereum-mainnet snapshot (`sourceChainId` 1) can therefore drive a Sepolia rehearsal (`targetChainId` 11155111); the two are never required to match.
 
-The manifest checksum covers the schema version, provenance, token-per-recipient, recipient cap, maximum supply, batch size, canonical sort rule, canonical recipients checksum, and every batch. Manifests are schema-versioned; the current version is 2. Version 1 manifests use different field names and semantics (`inputChecksum`, `expectedReserveAfter`, a caller-supplied cap) and must be regenerated rather than converted.
+Every manifest requires provenance — explicit, human-supplied values that are validated for shape but never invented: `sourceChainId`, `snapshotBlockNumber`, `snapshotBlockHash`, `sourceContracts`, `sourceDataSha256`, `rulesetId`, and `rulesetSha256`. The tool checks that these are present and well-formed; provenance is recorded and validated structurally, not independently verified — the tool cannot confirm it describes a real snapshot. `sourceDataSha256` is the value that binds the manifest to its frozen source data, and only the human who produced it can attest that it does. A manifest without provenance is not production-reviewable and the tool refuses to build one.
 
 Regenerate from frozen inputs; never edit a production manifest by hand. On-chain duplicate protection remains authoritative even though the manifest is deduplicated. The contract hard limit is 200 recipients per `distribute` call; operations should normally use about 100 (and no more than 150) for easier review, signing, monitoring, and reconciliation.
 
-Build a manifest offline with the packaged command. It reads explicit files, writes JSON and CSV, refuses to overwrite existing output unless `--force` is passed, prints the final counts and checksums, and makes no network request:
+Build a manifest offline. The command reads explicit files, writes `manifest.json`, `manifest.csv`, and `manifest.json.sha256` (the SHA-256 of the exact `manifest.json` bytes), refuses to overwrite existing output unless `--force` is passed, prints the derived counts and checksum, and makes no network request:
 
 ```bash
-cd ops && bun run manifest -- \
+cd ops && bun run ops -- manifest \
   --recipients ../data/snapshots/approved-recipients.json \
   --provenance ../data/snapshots/approved-provenance.json \
   --batch-size 100 \
@@ -84,17 +119,44 @@ cd ops && bun run manifest -- \
 
 ### Remaining initial allocation is not the contract balance
 
-The manifest's `expectedRemainingInitialAllocationAfter` is `(recipientCap - cumulativeRecipients) * TOKEN_PER_RECIPIENT`: an off-chain projection of the original allocation not yet distributed. It is **not** a prediction of the token contract's live balance. MREP2 is freely transferable, so any holder may transfer tokens back to `address(token)`, and `balanceOf(address(token))` can therefore exceed the remaining initial allocation by an arbitrary amount. Reconcile the two separately and never treat a positive difference as an accounting defect on its own.
+The remaining initial allocation is `(recipientCap - distributed) * TOKEN_PER_RECIPIENT`: an off-chain projection of the original allocation not yet distributed. It is **not** a prediction of the token contract's live balance. MREP2 is freely transferable, so any holder may transfer tokens back to `address(token)`, and `balanceOf(address(token))` can therefore exceed the remaining initial allocation by an arbitrary amount. Reconcile the two separately and never treat a positive difference as an accounting defect on its own.
 
 ## Offline distribution plan
 
 The final token address does not exist when the recipient snapshot is prepared, so an approved manifest cannot name it. `ops/src/distribution-plan.ts` performs the one deterministic step that binds an approved manifest to a deployed candidate, entirely offline.
 
-It takes the approved manifest, the chain ID, the deployed token address, the candidate source commit, and the runtime bytecode hash. It validates the token address and rejects the zero address; rejects the plan if the deployed token address appears anywhere in the recipient list; rejects a chain that does not match the manifest snapshot; preserves the manifest's recipient order and batch composition exactly; encodes the exact `distribute(address[])` calldata for each batch with viem; and records a checksum of each calldata payload, the manifest checksum, and the expected cumulative initial-recipient count and remaining initial allocation after each batch.
+It reads the manifest, re-validates it, and hashes the exact `manifest.json` bytes to bind the plan to that one file (recorded as `manifestSha256`; if a detached checksum file is supplied with `--manifest-sha256`, the tool verifies the bytes against it first). It validates the target chain, the deployed token address (rejecting the zero address), the source commit, and the runtime bytecode hash; rejects the plan if the deployed token address appears anywhere in the recipient list; derives batches from the manifest's canonical recipients and batch size; encodes the exact `distribute(address[])` calldata for each batch with viem; and then decodes each generated payload and asserts the decoded recipients exactly equal the expected batch, so a mis-encoded payload never reaches a signer.
+
+The plan is lean: it stores only the target chain, token, source commit, runtime bytecode hash, the bound manifest checksum, and — per batch — the batch number, recipients, and calldata. It repeats no manifest-derived value: no maximum supply, recipient cap, cumulative count, remaining allocation, first/last address, or per-batch checksum.
+
+```json
+{
+  "version": 1,
+  "targetChainId": 11155111,
+  "token": "0x...",
+  "sourceCommit": "40-character commit SHA",
+  "runtimeBytecodeSha256": "sha256:...",
+  "manifestSha256": "sha256:...",
+  "batches": [{ "number": 1, "recipients": ["0x..."], "calldata": "0x..." }]
+}
+```
 
 It makes no RPC request, signs nothing, and broadcasts nothing. It deliberately records **no nonce, fee, or gas figure**: any such value produced offline would be a guess presented as authoritative. The human preparing each transaction supplies those from live chain state under a separately authorized task.
 
 The plan exists so a human can compare the exact decoded transaction against the approved batch before signing: for each batch, the calldata in the plan must equal, byte for byte, what the signing device is about to sign.
+
+Generate the plan offline. It writes `plan.json` and `plan.json.sha256` (the SHA-256 of the exact `plan.json` bytes) and refuses to overwrite existing output unless `--force` is passed:
+
+```bash
+cd ops && bun run ops -- plan \
+  --manifest ../data/batches/candidate-1/manifest.json \
+  --manifest-sha256 ../data/batches/candidate-1/manifest.json.sha256 \
+  --target-chain-id 11155111 \
+  --token 0xDeployedTokenAddress... \
+  --source-commit <40-character hex git commit SHA> \
+  --runtime-bytecode-sha256 sha256:<64 lowercase hex> \
+  --output ../data/plans/candidate-1/plan.json
+```
 
 ## Candidate and unsigned artifacts
 
@@ -139,7 +201,7 @@ The `--broadcast --verify` shape is recorded for reference only and is **not aut
 
 ## Distribution and finalization
 
-Humans approve the batch sequence and stop conditions. Generate the offline distribution plan once the candidate is deployed, then work from it. For each `distribute` transaction: compare the decoded ordered array with the numbered manifest batch, its checksum, and the plan's calldata byte for byte; confirm a count within the operational size; confirm chain, target, zero value, nonce, gas, expected cumulative `totalInitialRecipients`, and expected remaining initial allocation; have the project owner review and sign; record the transaction, block, nonce, and fee; and reconcile before preparing the next batch. Reconciliation requires exact calldata and `Transfer` event order, `wasInitialRecipient == true` for every distributed address, a one-token balance increase per recipient, `totalInitialRecipients` equal to unique successful recipients, unchanged `totalSupply`, and `totalInitialRecipients <= recipientCap`. Any mismatch is a stop condition.
+Humans approve the batch sequence and stop conditions. Generate the offline distribution plan once the candidate is deployed, then work from it. For each `distribute` transaction: compare the decoded ordered array with the plan's numbered batch and its calldata byte for byte; confirm a count within the operational size; confirm chain, target, zero value, nonce, gas, the expected cumulative `totalInitialRecipients`, and the expected remaining initial allocation (both computed from the batch sequence); have the project owner review and sign; record the transaction, block, nonce, and fee; and reconcile before preparing the next batch. Reconciliation requires exact calldata and `Transfer` event order, `wasInitialRecipient == true` for every distributed address, a one-token balance increase per recipient, `totalInitialRecipients` equal to unique successful recipients, unchanged `totalSupply`, and `totalInitialRecipients <= recipientCap`. Any mismatch is a stop condition.
 
 Finalize only after reconciling every manifest, event, counter, and remaining cap, with no unresolved incident and human approval. Decode and simulate the exact zero-value `finalizeDistribution` transaction; record both `totalInitialRecipients` and `contractBalanceAtFinalization` (the token contract's complete balance, `balanceOf(address(this))`, and the event's third field). Separately compute the remaining initial allocation as `(recipientCap - totalInitialRecipients) * TOKEN_PER_RECIPIENT`. If the contract balance exceeds that figure, the difference is tokens transferred to the contract outside initial distribution; do not treat such a difference as a contract accounting defect on its own — investigate and record it before finalizing. No rescue or withdrawal path exists for returned tokens. Finalizing below the cap requires a written reason. After confirmation, record `DistributionFinalized` and prove later distribution and repeated finalization revert while standard transfers still succeed. Consider immediate finalization for a credible incident while the owner retains legitimate control; it cannot recover a key, reverse prior distribution, or move the locked reserve.
 

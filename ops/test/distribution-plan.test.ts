@@ -2,58 +2,57 @@ import { describe, expect, test } from "bun:test";
 import { getAddress } from "viem";
 import {
   buildDistributionPlan,
-  decodeDistributeCalldata,
-  DISTRIBUTE_SIGNATURE,
+  decodeDistribute,
   distributionPlanToJson,
-  PLAN_SCHEMA_VERSION,
+  PLAN_VERSION,
 } from "../src/distribution-plan.ts";
 import {
   buildManifest,
   type Manifest,
-  type RecipientProvenance,
-  TOKEN_PER_RECIPIENT,
+  type Provenance,
 } from "../src/manifest.ts";
 
 function addr(n: number): string {
   return `0x${n.toString(16).padStart(40, "0")}`;
 }
 
-const CHAIN_ID = 1;
+const SOURCE_CHAIN_ID = 1;
+const TARGET_CHAIN_ID = 11155111;
 const SOURCE_CONTRACT = getAddress(addr(0xabc123)) as `0x${string}`;
 const COMMIT = "a".repeat(40);
 const RUNTIME_HASH = `sha256:${"c".repeat(64)}`;
+const MANIFEST_HASH = `sha256:${"d".repeat(64)}`;
 
 /** Explicit fixture. Not a proposed REP snapshot, ruleset, or source contract. */
-function provenance(
-  overrides: Partial<RecipientProvenance> = {},
-): RecipientProvenance {
+function provenance(overrides: Partial<Provenance> = {}): Provenance {
   return {
-    chainId: CHAIN_ID,
+    sourceChainId: SOURCE_CHAIN_ID,
     snapshotBlockNumber: "21000000",
     snapshotBlockHash: `0x${"1".repeat(64)}`,
     sourceContracts: [SOURCE_CONTRACT],
-    sourceDataChecksum: `sha256:${"a".repeat(64)}`,
+    sourceDataSha256: `sha256:${"a".repeat(64)}`,
     rulesetId: "fixture-ruleset-v1",
-    rulesetChecksum: `sha256:${"b".repeat(64)}`,
+    rulesetSha256: `sha256:${"b".repeat(64)}`,
     ...overrides,
   };
 }
 
 function manifestOf(count: number, batchSize: number): Manifest {
   const recipients = Array.from({ length: count }, (_, i) => addr(i + 1));
-  return buildManifest(recipients, { batchSize, provenance: provenance() });
+  return buildManifest(recipients, provenance(), batchSize);
 }
 
 /** A deployed token address that is not in any fixture recipient list. */
 const DEPLOYED_TOKEN = getAddress(addr(0xdeadbeef)) as `0x${string}`;
 
-function planOf(manifest: Manifest, deployedToken: string = DEPLOYED_TOKEN) {
+function planOf(manifest: Manifest, token: string = DEPLOYED_TOKEN) {
   return buildDistributionPlan({
     manifest,
-    chainId: CHAIN_ID,
-    deployedToken,
-    candidateSourceCommit: COMMIT,
-    runtimeBytecodeHash: RUNTIME_HASH,
+    manifestSha256: MANIFEST_HASH,
+    targetChainId: TARGET_CHAIN_ID,
+    token,
+    sourceCommit: COMMIT,
+    runtimeBytecodeSha256: RUNTIME_HASH,
   });
 }
 
@@ -63,14 +62,46 @@ describe("buildDistributionPlan", () => {
     expect(planOf(manifest)).toEqual(planOf(manifest));
   });
 
-  test("stamps the schema version, signature, and unsigned notice", () => {
+  test("stamps the version and binds token, chain, commit, and checksums", () => {
     const plan = planOf(manifestOf(3, 2));
-    expect(plan.schemaVersion).toBe(PLAN_SCHEMA_VERSION);
-    expect(plan.functionSignature).toBe(DISTRIBUTE_SIGNATURE);
-    expect(plan.notice).toMatch(/no nonce, fee, gas, or signature/);
+    expect(plan.version).toBe(PLAN_VERSION);
+    expect(plan.token).toBe(DEPLOYED_TOKEN);
+    expect(plan.targetChainId).toBe(TARGET_CHAIN_ID);
+    expect(plan.sourceCommit).toBe(COMMIT);
+    expect(plan.runtimeBytecodeSha256).toBe(RUNTIME_HASH);
+    expect(plan.manifestSha256).toBe(MANIFEST_HASH);
   });
 
-  test("records no nonce, fee, or gas figure", () => {
+  test("preserves the canonical manifest order and batch composition", () => {
+    const manifest = manifestOf(250, 100);
+    const plan = planOf(manifest);
+    expect(plan.batches.map((b) => b.number)).toEqual([1, 2, 3]);
+    expect(plan.batches.map((b) => b.recipients.length)).toEqual([
+      100, 100, 50,
+    ]);
+    expect(plan.batches.flatMap((b) => b.recipients)).toEqual(
+      manifest.recipients,
+    );
+  });
+
+  test("encodes calldata that decodes to exactly the expected recipients", () => {
+    const plan = planOf(manifestOf(250, 100));
+    for (const batch of plan.batches) {
+      expect([...decodeDistribute(batch.calldata)]).toEqual(batch.recipients);
+      expect(batch.calldata.startsWith("0x")).toBe(true);
+    }
+  });
+
+  test("allows the source and target chains to differ", () => {
+    // A mainnet-source snapshot must drive a Sepolia rehearsal plan.
+    const manifest = manifestOf(3, 2);
+    expect(manifest.provenance.sourceChainId).toBe(SOURCE_CHAIN_ID);
+    const plan = planOf(manifest);
+    expect(plan.targetChainId).toBe(TARGET_CHAIN_ID);
+    expect(plan.targetChainId).not.toBe(manifest.provenance.sourceChainId);
+  });
+
+  test("carries no nonce, fee, gas, key, signature, or broadcast fields", () => {
     const parsed = JSON.parse(distributionPlanToJson(planOf(manifestOf(3, 2))));
     for (const forbidden of [
       "nonce",
@@ -79,71 +110,15 @@ describe("buildDistributionPlan", () => {
       "gasPrice",
       "maxFeePerGas",
       "maxPriorityFeePerGas",
+      "fee",
       "value",
+      "privateKey",
       "signature",
+      "broadcast",
     ]) {
       expect(parsed).not.toHaveProperty(forbidden);
       expect(parsed.batches[0]).not.toHaveProperty(forbidden);
     }
-  });
-
-  test("preserves the manifest recipient order and batch composition", () => {
-    const manifest = manifestOf(250, 100);
-    const plan = planOf(manifest);
-
-    expect(plan.batches.map((b) => b.batchNumber)).toEqual([1, 2, 3]);
-    expect(plan.batches.map((b) => b.recipientCount)).toEqual([100, 100, 50]);
-    expect(plan.batches.map((b) => b.recipients)).toEqual(
-      manifest.batches.map((b) => b.recipients),
-    );
-    expect(plan.batches.map((b) => b.batchChecksum)).toEqual(
-      manifest.batches.map((b) => b.batchChecksum),
-    );
-  });
-
-  test("encodes calldata that decodes back to the exact recipient array", () => {
-    const manifest = manifestOf(250, 100);
-    const plan = planOf(manifest);
-
-    plan.batches.forEach((batch) => {
-      const decoded = decodeDistributeCalldata(batch.calldata);
-      expect([...decoded]).toEqual(batch.recipients);
-      // Selector of distribute(address[]), then a standard dynamic-array encoding.
-      expect(batch.calldata.startsWith("0x")).toBe(true);
-      expect(batch.calldataChecksum).toMatch(/^sha256:[0-9a-f]{64}$/);
-    });
-  });
-
-  test("propagates the manifest checksum and cap", () => {
-    const manifest = manifestOf(250, 100);
-    const plan = planOf(manifest);
-    expect(plan.manifestChecksum).toBe(manifest.manifestChecksum);
-    expect(plan.manifestSchemaVersion).toBe(manifest.schemaVersion);
-    expect(plan.recipientCap).toBe("250");
-    expect(plan.maximumSupply).toBe(manifest.maximumSupply);
-    expect(plan.totalRecipients).toBe(250);
-    expect(plan.totalBatches).toBe(3);
-  });
-
-  test("a different manifest yields a different plan checksum", () => {
-    const a = planOf(manifestOf(250, 100));
-    const b = planOf(manifestOf(250, 50));
-    expect(b.planChecksum).not.toBe(a.planChecksum);
-  });
-
-  test("records correct cumulative accounting per batch", () => {
-    const plan = planOf(manifestOf(250, 100));
-
-    expect(
-      plan.batches.map((b) => b.expectedCumulativeInitialRecipientsAfter),
-    ).toEqual([100, 200, 250]);
-    expect(
-      plan.batches.map((b) => b.expectedRemainingInitialAllocationAfter),
-    ).toEqual([
-      (150n * TOKEN_PER_RECIPIENT).toString(10),
-      (50n * TOKEN_PER_RECIPIENT).toString(10),
-      "0",
-    ]);
   });
 
   test("rejects the zero token address", () => {
@@ -160,97 +135,84 @@ describe("buildDistributionPlan", () => {
 
   test("rejects a manifest recipient equal to the deployed token address", () => {
     const manifest = manifestOf(250, 100);
-    // Pick a real recipient out of the middle of the list and "deploy" the token there.
-    const collidingRecipient = manifest.batches[1]
-      ?.recipients[7] as `0x${string}`;
-    expect(collidingRecipient).toBeDefined();
-
-    expect(() => planOf(manifest, collidingRecipient)).toThrow(
-      /the token contract cannot be an initial recipient/,
+    const colliding = manifest.recipients[137] as `0x${string}`;
+    expect(colliding).toBeDefined();
+    expect(() => planOf(manifest, colliding)).toThrow(
+      /token contract cannot be a recipient/,
     );
-    expect(() => planOf(manifest, collidingRecipient.toLowerCase())).toThrow(
-      /the token contract cannot be an initial recipient/,
+    expect(() => planOf(manifest, colliding.toLowerCase())).toThrow(
+      /token contract cannot be a recipient/,
     );
   });
 
-  test("rejects a chain mismatch against the manifest snapshot", () => {
+  test("rejects an invalid target chain", () => {
     const manifest = manifestOf(3, 2);
     expect(() =>
       buildDistributionPlan({
         manifest,
-        chainId: 11155111,
-        deployedToken: DEPLOYED_TOKEN,
-        candidateSourceCommit: COMMIT,
-        runtimeBytecodeHash: RUNTIME_HASH,
+        manifestSha256: MANIFEST_HASH,
+        targetChainId: 0,
+        token: DEPLOYED_TOKEN,
+        sourceCommit: COMMIT,
+        runtimeBytecodeSha256: RUNTIME_HASH,
       }),
-    ).toThrow(/chain mismatch/);
+    ).toThrow(/targetChainId must be a positive integer/);
   });
 
-  test("rejects a non-positive chain ID", () => {
+  test("rejects a malformed source commit or runtime bytecode checksum", () => {
     const manifest = manifestOf(3, 2);
     expect(() =>
       buildDistributionPlan({
         manifest,
-        chainId: 0,
-        deployedToken: DEPLOYED_TOKEN,
-        candidateSourceCommit: COMMIT,
-        runtimeBytecodeHash: RUNTIME_HASH,
+        manifestSha256: MANIFEST_HASH,
+        targetChainId: TARGET_CHAIN_ID,
+        token: DEPLOYED_TOKEN,
+        sourceCommit: "abc1234",
+        runtimeBytecodeSha256: RUNTIME_HASH,
       }),
-    ).toThrow(/chainId must be a positive integer/);
+    ).toThrow(/sourceCommit/);
+    expect(() =>
+      buildDistributionPlan({
+        manifest,
+        manifestSha256: MANIFEST_HASH,
+        targetChainId: TARGET_CHAIN_ID,
+        token: DEPLOYED_TOKEN,
+        sourceCommit: COMMIT,
+        runtimeBytecodeSha256: "c".repeat(64),
+      }),
+    ).toThrow(/runtimeBytecodeSha256/);
   });
 
-  test("rejects a malformed source commit or runtime bytecode hash", () => {
+  test("rejects a malformed manifest checksum", () => {
     const manifest = manifestOf(3, 2);
     expect(() =>
       buildDistributionPlan({
         manifest,
-        chainId: CHAIN_ID,
-        deployedToken: DEPLOYED_TOKEN,
-        candidateSourceCommit: "abc1234",
-        runtimeBytecodeHash: RUNTIME_HASH,
+        manifestSha256: "d".repeat(64),
+        targetChainId: TARGET_CHAIN_ID,
+        token: DEPLOYED_TOKEN,
+        sourceCommit: COMMIT,
+        runtimeBytecodeSha256: RUNTIME_HASH,
       }),
-    ).toThrow(/candidateSourceCommit/);
-    expect(() =>
-      buildDistributionPlan({
-        manifest,
-        chainId: CHAIN_ID,
-        deployedToken: DEPLOYED_TOKEN,
-        candidateSourceCommit: COMMIT,
-        runtimeBytecodeHash: "c".repeat(64),
-      }),
-    ).toThrow(/runtimeBytecodeHash/);
+    ).toThrow(/manifestSha256/);
+  });
+
+  test("re-validates the manifest and rejects one tampered after being built", () => {
+    // Satisfies the Manifest type but has an unsorted recipient list; parseManifest must catch it.
+    const manifest = manifestOf(3, 5);
+    const tampered: Manifest = {
+      ...manifest,
+      recipients: [...manifest.recipients].reverse(),
+    };
+    expect(() => planOf(tampered)).toThrow(/not sorted ascending/);
   });
 
   test("does not mutate the input manifest", () => {
     const manifest = manifestOf(250, 100);
     const snapshot = JSON.parse(JSON.stringify(manifest));
-
     const plan = planOf(manifest);
     plan.batches[0]?.recipients.push(addr(999) as `0x${string}`);
-
     expect(JSON.parse(JSON.stringify(manifest))).toEqual(snapshot);
-  });
-
-  test("rejects a manifest tampered after being built, even though it still satisfies the Manifest type", () => {
-    // A single batch (batchSize > count) keeps the fixture to one remaining-allocation figure.
-    const manifest = manifestOf(3, 5);
-    const tamperedCap = 999n;
-    const tampered: Manifest = {
-      ...manifest,
-      recipientCap: tamperedCap.toString(10),
-      batches: manifest.batches.map((batch) => ({
-        ...batch,
-        // Keep this figure consistent with the tampered cap so the test isolates the
-        // recipientCap/count cross-check rather than tripping an earlier one.
-        expectedRemainingInitialAllocationAfter: (
-          (tamperedCap - BigInt(batch.cumulativeRecipients)) *
-          TOKEN_PER_RECIPIENT
-        ).toString(10),
-      })),
-    };
-    expect(() => planOf(tampered)).toThrow(
-      /recipientCap 999 does not equal the total unique recipient count 3/,
-    );
   });
 });
 

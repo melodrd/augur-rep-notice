@@ -1,225 +1,188 @@
 // Deterministic recipient-manifest tooling for MigrateRepV2Token (MREP2).
 //
-// This module prepares an off-chain distribution plan from a list of recipient addresses and the
-// human-supplied provenance of that list. It validates and normalizes addresses, rejects zero and
-// duplicate addresses, sorts by a single documented canonical rule, splits into batches no larger
-// than the operational batch size, and records exact cumulative recipient counts, the expected
-// remaining initial allocation after each batch, and cryptographic checksums.
+// A manifest is an offline, human-approved artifact: the exact set of addresses that will each
+// receive one MREP2 token, plus the provenance of how that set was chosen. The contract never
+// reads it. It exists so the recipient list can be reviewed, checksummed, and frozen before any
+// deployment, and so the deployed cap is derived from the list rather than chosen with headroom.
 //
-// The recipient cap is DERIVED from the final normalized unique recipient list; it is never
-// supplied by the caller. A production manifest therefore cannot contain discretionary capacity:
-// there is no way to request supply or distribution headroom beyond the disclosed recipients.
-//
-// It never repairs a malformed address, never invents recipients or provenance, never stores
-// personal data, and performs no signing, broadcasting, or network access. On-chain duplicate
-// protection remains authoritative even though this manifest is deduplicated.
+// This module validates and normalizes addresses, rejects the zero address and case-insensitive
+// duplicates, sorts deterministically by lowercase address, and derives the cap and supply from
+// the exact unique recipient count. It never repairs input, invents provenance, stores personal
+// data, signs, broadcasts, or touches the network. On-chain duplicate protection stays
+// authoritative even though the manifest is already deduplicated.
 
-import { createHash } from "node:crypto";
 import { getAddress, isAddress } from "viem";
-import { z } from "zod";
 
 /** One whole MREP2 token in base units (18 decimals). */
 export const TOKEN_PER_RECIPIENT = 1_000_000_000_000_000_000n;
 
-/** Hard on-chain batch ceiling. The operational batch size must not exceed this. */
+/** Hard on-chain per-call recipient ceiling; the batch size must not exceed it. */
 export const MAX_BATCH_SIZE = 200;
 
-/**
- * Manifest schema version.
- *
- * v2 derives `recipientCap` from the recipient list, requires `provenance`, renames
- * `inputChecksum` to `canonicalRecipientsChecksum`, and renames `expectedReserveAfter` to
- * `expectedRemainingInitialAllocationAfter`. Field names and semantics both changed, so v1
- * manifests are not forward-compatible and must be regenerated.
- */
-export const MANIFEST_SCHEMA_VERSION = 2;
-
-const SORT_RULE = "ascending lowercase 20-byte hex address";
+/** The only manifest format this tool reads or writes. There is no v2 and no migration path. */
+export const MANIFEST_VERSION = 1;
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /** `sha256:` followed by 64 lowercase hex characters. */
-const SHA256_CHECKSUM = /^sha256:[0-9a-f]{64}$/;
+const SHA256 = /^sha256:[0-9a-f]{64}$/;
 
 /** A 32-byte hash in hex. */
 const BLOCK_HASH = /^0x[0-9a-fA-F]{64}$/;
 
 /** A canonical base-10 integer with no sign, leading zeros, or separators. */
-const DECIMAL_INTEGER = /^(0|[1-9][0-9]*)$/;
+const DECIMAL = /^(0|[1-9][0-9]*)$/;
 
 /**
- * Where a recipient list came from and which rules produced it. Every value is supplied by a
- * human and recorded verbatim; this module never derives, defaults, or invents any of it.
+ * Where a recipient list came from and which rules produced it. Every field is human-supplied and
+ * recorded verbatim; the tool validates its shape but never derives, defaults, or invents any of
+ * it, and cannot confirm it describes a real snapshot.
+ *
+ * `sourceChainId` is the chain the snapshot was read from. It is deliberately independent of the
+ * plan's `targetChainId` (where MREP2 is deployed): a mainnet snapshot may drive a Sepolia
+ * rehearsal, so the two are never required to match.
  *
  * Large integers are strings because JSON numbers cannot safely carry them.
  */
-export interface RecipientProvenance {
-  /** EIP-155 chain ID of the chain the snapshot was taken from. */
-  chainId: number;
-  /** Snapshot block number, base-10. A string to avoid JSON numeric-precision loss. */
+export interface Provenance {
+  sourceChainId: number;
   snapshotBlockNumber: string;
-  /** 32-byte hash of the snapshot block, pinning the snapshot to one exact chain history. */
   snapshotBlockHash: `0x${string}`;
-  /** The REP/REPv2 (or other) contracts the balances were read from, in reviewed order. */
   sourceContracts: `0x${string}`[];
-  /** Checksum of the frozen source data itself, as extracted before any transformation. */
-  sourceDataChecksum: string;
-  /** Identifier of the approved eligibility ruleset that produced the list. */
+  sourceDataSha256: string;
   rulesetId: string;
-  /** Checksum of that ruleset, pinning which exact rules were applied. */
-  rulesetChecksum: string;
+  rulesetSha256: string;
 }
 
-export interface BuildOptions {
-  /** Operational batch size (1..MAX_BATCH_SIZE). */
+/**
+ * The lean manifest. It stores only authoritative inputs: nothing that can be derived cheaply from
+ * `recipients` (cap, supply, batch counts, checksums) is kept here — those are computed on demand.
+ */
+export interface Manifest {
+  version: number;
+  provenance: Provenance;
   batchSize: number;
-  /** Mandatory human-supplied provenance for the recipient list. */
-  provenance: RecipientProvenance;
-}
-
-export interface Batch {
-  batchNumber: number;
-  recipientCount: number;
-  firstAddress: `0x${string}`;
-  lastAddress: `0x${string}`;
-  batchChecksum: string;
-  cumulativeRecipients: number;
-  /**
-   * Base units of the original initial allocation still undistributed after this batch:
-   * `(recipientCap - cumulativeRecipients) * TOKEN_PER_RECIPIENT`.
-   *
-   * This is NOT the expected live balance of the token contract. MREP2 is freely transferable,
-   * so holders may transfer tokens back to `address(token)`, and the live contract balance can
-   * therefore be larger than this figure. See the note on {Manifest}.
-   */
-  expectedRemainingInitialAllocationAfter: string;
+  /** Canonical: EIP-55 checksummed, deduplicated, sorted ascending by lowercase address. */
   recipients: `0x${string}`[];
 }
 
-/**
- * A deterministic, reviewable distribution manifest.
- *
- * Two quantities must never be conflated:
- *
- * - **remaining initial allocation** — `(recipientCap - cumulativeRecipients) * TOKEN_PER_RECIPIENT`,
- *   an off-chain projection of the original allocation not yet distributed. This manifest records
- *   it per batch as `expectedRemainingInitialAllocationAfter`.
- * - **live token contract balance** — `balanceOf(address(token))` on chain, which may exceed the
- *   remaining initial allocation by any amount holders transfer back to the contract.
- *
- * This manifest describes only the former. It cannot predict the latter.
- */
-export interface Manifest {
-  schemaVersion: number;
-  provenance: RecipientProvenance;
-  tokenPerRecipient: string;
-  /** Derived from the final unique recipient list; equal to the number of recipients. */
-  recipientCap: string;
-  operationalBatchSize: number;
-  maximumSupply: string;
-  canonicalSortRule: string;
-  /**
-   * Checksum of the canonical (normalized, deduplicated, sorted, EIP-55 checksummed) recipient
-   * array as it appears in this manifest.
-   *
-   * It proves the recipient array in this manifest is the one that was reviewed. It does NOT
-   * prove the original source data was unchanged — it is computed after normalization and
-   * sorting, not over the original input bytes. Use `provenance.sourceDataChecksum` for that.
-   */
-  canonicalRecipientsChecksum: string;
-  manifestChecksum: string;
-  batches: Batch[];
+export interface Batch {
+  number: number;
+  recipients: `0x${string}`[];
 }
 
-function sha256(data: string): string {
-  return `sha256:${createHash("sha256").update(data, "utf8").digest("hex")}`;
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+  return value;
 }
 
-const provenanceSchema = z.object({
-  chainId: z
-    .number()
-    .int("chainId must be an integer")
-    .positive("chainId must be positive"),
-  snapshotBlockNumber: z
-    .string()
-    .regex(
-      DECIMAL_INTEGER,
-      "snapshotBlockNumber must be a base-10 integer string",
-    )
-    // Zod reports every failing check, so this must tolerate a value that already failed the
-    // format check rather than throwing inside BigInt().
-    .refine(
-      (value) => DECIMAL_INTEGER.test(value) && BigInt(value) > 0n,
-      "snapshotBlockNumber must be positive",
-    ),
-  snapshotBlockHash: z
-    .string()
-    .regex(BLOCK_HASH, "snapshotBlockHash must be a 32-byte 0x-prefixed hash"),
-  sourceContracts: z
-    .array(z.string())
-    .min(1, "at least one source contract is required")
-    .refine(
-      (values) => values.every((value) => isAddress(value)),
-      "every source contract must be a valid Ethereum address",
-    )
-    .refine(
-      (values) => values.every((value) => value.toLowerCase() !== ZERO_ADDRESS),
-      "a source contract must not be the zero address",
-    )
-    .refine((values) => {
-      const lowered = values.map((value) => value.toLowerCase());
-      return new Set(lowered).size === lowered.length;
-    }, "source contracts must not contain duplicates"),
-  sourceDataChecksum: z
-    .string()
-    .regex(
-      SHA256_CHECKSUM,
-      "sourceDataChecksum must look like sha256:<64 lowercase hex>",
-    ),
-  rulesetId: z.string().min(1, "rulesetId must not be empty"),
-  rulesetChecksum: z
-    .string()
-    .regex(
-      SHA256_CHECKSUM,
-      "rulesetChecksum must look like sha256:<64 lowercase hex>",
-    ),
-});
-
 /**
- * Validate provenance and return it in canonical form. Source contracts are EIP-55 checksummed
- * and the block hash is lowercased, so equivalent provenance always produces one checksum.
- * Source-contract order is preserved: it is reviewed input, and it is covered by the checksum.
+ * Validate provenance and return it in canonical form: source contracts EIP-55 checksummed, block
+ * hash lowercased. Source-contract order is preserved because it is reviewed input.
  */
-export function normalizeProvenance(raw: unknown): RecipientProvenance {
-  const parsed = provenanceSchema.safeParse(raw);
-  if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map(
-        (issue) => `${issue.path.join(".") || "provenance"}: ${issue.message}`,
-      )
-      .join("; ");
-    throw new Error(`invalid recipient provenance: ${detail}`);
+export function parseProvenance(raw: unknown): Provenance {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("invalid recipient provenance: expected an object");
+  }
+  const p = raw as Record<string, unknown>;
+
+  const sourceChainId = p.sourceChainId;
+  if (
+    typeof sourceChainId !== "number" ||
+    !Number.isInteger(sourceChainId) ||
+    sourceChainId <= 0
+  ) {
+    throw new Error("provenance.sourceChainId must be a positive integer");
   }
 
-  const value = parsed.data;
+  const snapshotBlockNumber = requireString(
+    p.snapshotBlockNumber,
+    "provenance.snapshotBlockNumber",
+  );
+  if (!DECIMAL.test(snapshotBlockNumber) || BigInt(snapshotBlockNumber) <= 0n) {
+    throw new Error(
+      "provenance.snapshotBlockNumber must be a positive base-10 integer string",
+    );
+  }
+
+  const snapshotBlockHash = requireString(
+    p.snapshotBlockHash,
+    "provenance.snapshotBlockHash",
+  );
+  if (!BLOCK_HASH.test(snapshotBlockHash)) {
+    throw new Error(
+      "provenance.snapshotBlockHash must be a 32-byte 0x-prefixed hash",
+    );
+  }
+
+  if (!Array.isArray(p.sourceContracts) || p.sourceContracts.length === 0) {
+    throw new Error("provenance.sourceContracts must be a non-empty array");
+  }
+  const seenContracts = new Set<string>();
+  const sourceContracts = p.sourceContracts.map((entry, i) => {
+    if (typeof entry !== "string" || !isAddress(entry)) {
+      throw new Error(
+        `provenance.sourceContracts[${i}] must be a valid Ethereum address`,
+      );
+    }
+    const lower = entry.toLowerCase();
+    if (lower === ZERO_ADDRESS) {
+      throw new Error(
+        `provenance.sourceContracts[${i}] must not be the zero address`,
+      );
+    }
+    if (seenContracts.has(lower)) {
+      throw new Error(
+        `provenance.sourceContracts[${i}] is a duplicate: ${entry}`,
+      );
+    }
+    seenContracts.add(lower);
+    return getAddress(entry);
+  });
+
+  const sourceDataSha256 = requireString(
+    p.sourceDataSha256,
+    "provenance.sourceDataSha256",
+  );
+  if (!SHA256.test(sourceDataSha256)) {
+    throw new Error(
+      "provenance.sourceDataSha256 must look like sha256:<64 lowercase hex>",
+    );
+  }
+
+  const rulesetId = requireString(p.rulesetId, "provenance.rulesetId");
+  if (rulesetId.length === 0) {
+    throw new Error("provenance.rulesetId must not be empty");
+  }
+
+  const rulesetSha256 = requireString(
+    p.rulesetSha256,
+    "provenance.rulesetSha256",
+  );
+  if (!SHA256.test(rulesetSha256)) {
+    throw new Error(
+      "provenance.rulesetSha256 must look like sha256:<64 lowercase hex>",
+    );
+  }
+
   return {
-    chainId: value.chainId,
-    snapshotBlockNumber: value.snapshotBlockNumber,
-    snapshotBlockHash: value.snapshotBlockHash.toLowerCase() as `0x${string}`,
-    sourceContracts: value.sourceContracts.map(
-      (contract) => getAddress(contract) as `0x${string}`,
-    ),
-    sourceDataChecksum: value.sourceDataChecksum,
-    rulesetId: value.rulesetId,
-    rulesetChecksum: value.rulesetChecksum,
+    sourceChainId,
+    snapshotBlockNumber,
+    snapshotBlockHash: snapshotBlockHash.toLowerCase() as `0x${string}`,
+    sourceContracts,
+    sourceDataSha256,
+    rulesetId,
+    rulesetSha256,
   };
 }
 
 /**
- * Validate, normalize, deduplicate, and sort recipient addresses.
- * Throws on any malformed address, the zero address, or a duplicate. Never repairs input.
+ * Validate, normalize, deduplicate, and sort a raw recipient list. Throws on any malformed
+ * address, the zero address, or a case-insensitive duplicate. Never repairs input.
  */
-export function normalizeRecipients(raw: readonly string[]): `0x${string}`[] {
+export function normalizeRecipients(raw: readonly unknown[]): `0x${string}`[] {
   const seen = new Map<string, number>();
   const checksummed: `0x${string}`[] = [];
 
@@ -233,40 +196,26 @@ export function normalizeRecipients(raw: readonly string[]): `0x${string}`[] {
     if (lower === ZERO_ADDRESS) {
       throw new Error(`zero address at index ${index}`);
     }
-    const priorIndex = seen.get(lower);
-    if (priorIndex !== undefined) {
+    const prior = seen.get(lower);
+    if (prior !== undefined) {
       throw new Error(
-        `duplicate address at index ${index} (first seen at ${priorIndex}): ${lower}`,
+        `duplicate address at index ${index} (first seen at ${prior}): ${lower}`,
       );
     }
     seen.set(lower, index);
-    // getAddress returns the EIP-55 checksummed form for human-facing output.
     checksummed.push(getAddress(entry));
   });
 
-  // Canonical rule: sort by lowercase hex ascending.
-  return checksummed.sort((left, right) => {
-    const a = left.toLowerCase();
-    const b = right.toLowerCase();
-    if (a < b) return -1;
-    if (a > b) return 1;
+  return checksummed.sort((a, b) => {
+    const la = a.toLowerCase();
+    const lb = b.toLowerCase();
+    if (la < lb) return -1;
+    if (la > lb) return 1;
     return 0;
   });
 }
 
-/**
- * Build a deterministic manifest from raw recipient addresses and their provenance. Pure: no I/O,
- * no mutation of inputs, and the same inputs always produce the same output including checksums.
- *
- * `recipientCap` is derived from the final unique recipient list and cannot be supplied. The
- * deployed `MREP2_RECIPIENT_CAP` must be copied exactly from the approved manifest.
- */
-export function buildManifest(
-  raw: readonly string[],
-  options: BuildOptions,
-): Manifest {
-  const { batchSize } = options;
-
+function assertBatchSize(batchSize: number): void {
   if (
     !Number.isInteger(batchSize) ||
     batchSize < 1 ||
@@ -276,347 +225,156 @@ export function buildManifest(
       `batchSize must be an integer in 1..${MAX_BATCH_SIZE}, got ${batchSize}`,
     );
   }
-
-  const provenance = normalizeProvenance(options.provenance);
-  const recipients = normalizeRecipients(raw);
-
-  if (recipients.length === 0) {
-    throw new Error(
-      "recipient list is empty: a production manifest must distribute to at least one address",
-    );
-  }
-
-  // The cap IS the disclosed recipient count. No headroom can be requested.
-  const recipientCap = BigInt(recipients.length);
-  const maximumSupply = recipientCap * TOKEN_PER_RECIPIENT;
-
-  const batches: Batch[] = [];
-  let cumulative = 0;
-  for (let offset = 0; offset < recipients.length; offset += batchSize) {
-    const slice = recipients.slice(offset, offset + batchSize);
-    cumulative += slice.length;
-    const expectedRemainingInitialAllocationAfter =
-      (recipientCap - BigInt(cumulative)) * TOKEN_PER_RECIPIENT;
-    const batchNumber = batches.length + 1;
-    const batchBody = JSON.stringify({ batchNumber, recipients: slice });
-
-    // biome-ignore lint/style/noNonNullAssertion: slice is non-empty by loop construction.
-    const firstAddress = slice[0]!;
-    // biome-ignore lint/style/noNonNullAssertion: slice is non-empty by loop construction.
-    const lastAddress = slice[slice.length - 1]!;
-
-    batches.push({
-      batchNumber,
-      recipientCount: slice.length,
-      firstAddress,
-      lastAddress,
-      batchChecksum: sha256(batchBody),
-      cumulativeRecipients: cumulative,
-      expectedRemainingInitialAllocationAfter:
-        expectedRemainingInitialAllocationAfter.toString(10),
-      recipients: slice,
-    });
-  }
-
-  const canonicalRecipientsChecksum = sha256(JSON.stringify(recipients));
-
-  const withoutManifestChecksum: Omit<Manifest, "manifestChecksum"> = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    provenance,
-    tokenPerRecipient: TOKEN_PER_RECIPIENT.toString(10),
-    recipientCap: recipientCap.toString(10),
-    operationalBatchSize: batchSize,
-    maximumSupply: maximumSupply.toString(10),
-    canonicalSortRule: SORT_RULE,
-    canonicalRecipientsChecksum,
-    batches,
-  };
-
-  // The manifest checksum covers the schema version, provenance, token-per-recipient, recipient
-  // cap, maximum supply, batch size, sort rule, canonical recipient checksum, and every batch.
-  return {
-    ...withoutManifestChecksum,
-    manifestChecksum: sha256(JSON.stringify(withoutManifestChecksum)),
-  };
 }
-
-const rawBatchSchema = z.object({
-  batchNumber: z.number().int().positive(),
-  recipientCount: z.number().int().positive(),
-  firstAddress: z.string(),
-  lastAddress: z.string(),
-  batchChecksum: z
-    .string()
-    .regex(
-      SHA256_CHECKSUM,
-      "batchChecksum must look like sha256:<64 lowercase hex>",
-    ),
-  cumulativeRecipients: z.number().int().positive(),
-  expectedRemainingInitialAllocationAfter: z
-    .string()
-    .regex(
-      DECIMAL_INTEGER,
-      "expectedRemainingInitialAllocationAfter must be a base-10 integer string",
-    ),
-  recipients: z
-    .array(z.string())
-    .min(1, "a batch must contain at least one recipient")
-    .max(
-      MAX_BATCH_SIZE,
-      `a batch must contain at most ${MAX_BATCH_SIZE} recipients`,
-    ),
-});
-
-const rawManifestSchema = z.object({
-  schemaVersion: z.number(),
-  provenance: z.unknown(),
-  tokenPerRecipient: z.string(),
-  recipientCap: z
-    .string()
-    .regex(DECIMAL_INTEGER, "recipientCap must be a base-10 integer string"),
-  operationalBatchSize: z.number().int().min(1).max(MAX_BATCH_SIZE),
-  maximumSupply: z
-    .string()
-    .regex(DECIMAL_INTEGER, "maximumSupply must be a base-10 integer string"),
-  canonicalSortRule: z.string(),
-  canonicalRecipientsChecksum: z
-    .string()
-    .regex(
-      SHA256_CHECKSUM,
-      "canonicalRecipientsChecksum must look like sha256:<64 lowercase hex>",
-    ),
-  manifestChecksum: z
-    .string()
-    .regex(
-      SHA256_CHECKSUM,
-      "manifestChecksum must look like sha256:<64 lowercase hex>",
-    ),
-  batches: z
-    .array(rawBatchSchema)
-    .min(1, "a manifest must contain at least one batch"),
-});
 
 /**
- * Independently verify a manifest loaded from untrusted storage (a JSON file on disk) and return
- * it in normalized form. Nothing in `raw` is trusted on the strength of its TypeScript type or of
- * a checksum it already carries: every checksum, count, and cross-field relationship is
- * recomputed from the recipient data and compared against the claimed value. A manifest that
- * merely satisfies the `Manifest` interface at the type level has not been checked at all.
- *
- * `buildDistributionPlan` calls this before using a manifest so a hand-edited or corrupted file
- * cannot silently reach calldata generation.
+ * Build a manifest from a raw recipient list and its provenance. Pure: no I/O, no mutation of
+ * inputs, and the same inputs always produce the same manifest. The cap is the disclosed recipient
+ * count and cannot be supplied, so a manifest cannot carry undisclosed headroom.
  */
-export function validateManifest(raw: unknown): Manifest {
-  const parsed = rawManifestSchema.safeParse(raw);
-  if (!parsed.success) {
-    const detail = parsed.error.issues
-      .map((issue) => `${issue.path.join(".") || "manifest"}: ${issue.message}`)
-      .join("; ");
-    throw new Error(`invalid manifest: ${detail}`);
-  }
-  const value = parsed.data;
-
-  if (value.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
+export function buildManifest(
+  rawRecipients: readonly unknown[],
+  provenance: unknown,
+  batchSize: number,
+): Manifest {
+  assertBatchSize(batchSize);
+  const parsedProvenance = parseProvenance(provenance);
+  const recipients = normalizeRecipients(rawRecipients);
+  if (recipients.length === 0) {
     throw new Error(
-      `unsupported manifest schema version: expected ${MANIFEST_SCHEMA_VERSION}, got ${value.schemaVersion}`,
+      "recipient list is empty: a manifest must distribute to at least one address",
     );
   }
-
-  const provenance = normalizeProvenance(value.provenance);
-
-  if (value.tokenPerRecipient !== TOKEN_PER_RECIPIENT.toString(10)) {
-    throw new Error(
-      `tokenPerRecipient must equal ${TOKEN_PER_RECIPIENT.toString(10)}, got ${value.tokenPerRecipient}`,
-    );
-  }
-
-  const claimedRecipientCap = BigInt(value.recipientCap);
-  const tokenPerRecipient = BigInt(value.tokenPerRecipient);
-
-  // Tracks the lowercase form of the previous recipient across the whole manifest (not just
-  // within one batch), so a duplicate or ordering violation spanning a batch boundary is caught.
-  let previousLower: string | undefined;
-  let cumulative = 0;
-  const allRecipients: `0x${string}`[] = [];
-
-  const normalizedBatches: Batch[] = value.batches.map((batch, batchIndex) => {
-    const expectedBatchNumber = batchIndex + 1;
-    if (batch.batchNumber !== expectedBatchNumber) {
-      throw new Error(
-        `batch numbers must be sequential starting at 1: expected ${expectedBatchNumber} at position ${batchIndex}, got ${batch.batchNumber}`,
-      );
-    }
-    if (batch.recipientCount !== batch.recipients.length) {
-      throw new Error(
-        `batch ${batch.batchNumber} recipientCount ${batch.recipientCount} does not match its recipient array length ${batch.recipients.length}`,
-      );
-    }
-
-    const normalizedRecipients: `0x${string}`[] = batch.recipients.map(
-      (entry, index) => {
-        if (!isAddress(entry)) {
-          throw new Error(
-            `batch ${batch.batchNumber} recipient at position ${index} is not a valid Ethereum address: ${entry}`,
-          );
-        }
-        const canonical = getAddress(entry);
-        if (canonical !== entry) {
-          throw new Error(
-            `batch ${batch.batchNumber} recipient at position ${index} is not in canonical EIP-55 checksummed form: ${entry}`,
-          );
-        }
-        const lower = canonical.toLowerCase();
-        if (lower === ZERO_ADDRESS) {
-          throw new Error(
-            `batch ${batch.batchNumber} recipient at position ${index} is the zero address`,
-          );
-        }
-        if (previousLower !== undefined) {
-          if (lower === previousLower) {
-            throw new Error(
-              `duplicate recipient address across the manifest: ${canonical}`,
-            );
-          }
-          if (lower < previousLower) {
-            throw new Error(
-              `recipients are not canonically sorted: ${canonical} appears after a lexicographically greater address`,
-            );
-          }
-        }
-        previousLower = lower;
-        return canonical;
-      },
-    );
-
-    // biome-ignore lint/style/noNonNullAssertion: recipients is non-empty per rawBatchSchema.
-    const first = normalizedRecipients[0]!;
-    // biome-ignore lint/style/noNonNullAssertion: recipients is non-empty per rawBatchSchema.
-    const last = normalizedRecipients[normalizedRecipients.length - 1]!;
-    if (batch.firstAddress !== first) {
-      throw new Error(
-        `batch ${batch.batchNumber} firstAddress ${batch.firstAddress} does not match the actual first recipient ${first}`,
-      );
-    }
-    if (batch.lastAddress !== last) {
-      throw new Error(
-        `batch ${batch.batchNumber} lastAddress ${batch.lastAddress} does not match the actual last recipient ${last}`,
-      );
-    }
-
-    cumulative += normalizedRecipients.length;
-    if (batch.cumulativeRecipients !== cumulative) {
-      throw new Error(
-        `batch ${batch.batchNumber} cumulativeRecipients ${batch.cumulativeRecipients} does not match the recomputed running total ${cumulative}`,
-      );
-    }
-
-    const expectedRemaining =
-      (claimedRecipientCap - BigInt(cumulative)) * tokenPerRecipient;
-    if (
-      batch.expectedRemainingInitialAllocationAfter !==
-      expectedRemaining.toString(10)
-    ) {
-      throw new Error(
-        `batch ${batch.batchNumber} expectedRemainingInitialAllocationAfter ${batch.expectedRemainingInitialAllocationAfter} does not match the recomputed value ${expectedRemaining.toString(10)}`,
-      );
-    }
-
-    const recomputedBatchChecksum = sha256(
-      JSON.stringify({
-        batchNumber: batch.batchNumber,
-        recipients: normalizedRecipients,
-      }),
-    );
-    if (batch.batchChecksum !== recomputedBatchChecksum) {
-      throw new Error(
-        `batch ${batch.batchNumber} checksum does not match its recomputed recipient data`,
-      );
-    }
-
-    allRecipients.push(...normalizedRecipients);
-
-    return {
-      batchNumber: batch.batchNumber,
-      recipientCount: batch.recipientCount,
-      firstAddress: first,
-      lastAddress: last,
-      batchChecksum: batch.batchChecksum,
-      cumulativeRecipients: batch.cumulativeRecipients,
-      expectedRemainingInitialAllocationAfter:
-        batch.expectedRemainingInitialAllocationAfter,
-      recipients: normalizedRecipients,
-    };
-  });
-
-  if (claimedRecipientCap !== BigInt(allRecipients.length)) {
-    throw new Error(
-      `recipientCap ${value.recipientCap} does not equal the total unique recipient count ${allRecipients.length}`,
-    );
-  }
-
-  const expectedMaximumSupply = claimedRecipientCap * tokenPerRecipient;
-  if (BigInt(value.maximumSupply) !== expectedMaximumSupply) {
-    throw new Error(
-      `maximumSupply ${value.maximumSupply} does not equal recipientCap * tokenPerRecipient (${expectedMaximumSupply.toString(10)})`,
-    );
-  }
-
-  const recomputedCanonicalRecipientsChecksum = sha256(
-    JSON.stringify(allRecipients),
-  );
-  if (
-    value.canonicalRecipientsChecksum !== recomputedCanonicalRecipientsChecksum
-  ) {
-    throw new Error(
-      "canonicalRecipientsChecksum does not match the recomputed recipient data",
-    );
-  }
-
-  const withoutManifestChecksum: Omit<Manifest, "manifestChecksum"> = {
-    schemaVersion: value.schemaVersion,
-    provenance,
-    tokenPerRecipient: value.tokenPerRecipient,
-    recipientCap: value.recipientCap,
-    operationalBatchSize: value.operationalBatchSize,
-    maximumSupply: value.maximumSupply,
-    canonicalSortRule: value.canonicalSortRule,
-    canonicalRecipientsChecksum: value.canonicalRecipientsChecksum,
-    batches: normalizedBatches,
-  };
-
-  const recomputedManifestChecksum = sha256(
-    JSON.stringify(withoutManifestChecksum),
-  );
-  if (value.manifestChecksum !== recomputedManifestChecksum) {
-    throw new Error(
-      "manifestChecksum does not match the recomputed manifest data",
-    );
-  }
-
   return {
-    ...withoutManifestChecksum,
-    manifestChecksum: value.manifestChecksum,
+    version: MANIFEST_VERSION,
+    provenance: parsedProvenance,
+    batchSize,
+    recipients,
   };
 }
 
-/** Deterministic pretty JSON serialization. */
+/**
+ * Recipients in a stored manifest must already be canonical: valid, non-zero, EIP-55 checksummed,
+ * and strictly ascending by lowercase address. Strict ascending order rejects unsorted lists and
+ * case-insensitive duplicates in one check. A hand-edited or corrupted list is rejected rather
+ * than silently re-normalized, so the reviewed array is the array that reaches calldata generation.
+ */
+function parseCanonicalRecipients(raw: readonly unknown[]): `0x${string}`[] {
+  if (raw.length === 0) {
+    throw new Error("manifest.recipients must not be empty");
+  }
+  let previousLower: string | undefined;
+  return raw.map((entry, index) => {
+    if (typeof entry !== "string" || !isAddress(entry)) {
+      throw new Error(
+        `recipient at index ${index} is not a valid Ethereum address: ${String(entry)}`,
+      );
+    }
+    if (getAddress(entry) !== entry) {
+      throw new Error(
+        `recipient at index ${index} is not in canonical EIP-55 checksummed form: ${entry}`,
+      );
+    }
+    const lower = entry.toLowerCase();
+    if (lower === ZERO_ADDRESS) {
+      throw new Error(`recipient at index ${index} is the zero address`);
+    }
+    if (previousLower !== undefined) {
+      if (lower === previousLower) {
+        throw new Error(`duplicate recipient at index ${index}: ${entry}`);
+      }
+      if (lower < previousLower) {
+        throw new Error(
+          `recipients are not sorted ascending at index ${index}: ${entry}`,
+        );
+      }
+    }
+    previousLower = lower;
+    return entry as `0x${string}`;
+  });
+}
+
+/**
+ * Validate a manifest loaded from untrusted storage (a JSON file) and return it normalized.
+ * Nothing is trusted on the strength of its TypeScript type: version, provenance, batch size, and
+ * every recipient are checked. Byte-level integrity is a separate concern, covered by the detached
+ * `manifest.json.sha256` the CLI emits.
+ */
+export function parseManifest(raw: unknown): Manifest {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("manifest must be a JSON object");
+  }
+  const m = raw as Record<string, unknown>;
+
+  if (m.version !== MANIFEST_VERSION) {
+    throw new Error(
+      `unsupported manifest version: expected ${MANIFEST_VERSION}, got ${String(m.version)}`,
+    );
+  }
+
+  const provenance = parseProvenance(m.provenance);
+
+  if (typeof m.batchSize !== "number") {
+    throw new Error("manifest.batchSize must be a number");
+  }
+  assertBatchSize(m.batchSize);
+
+  if (!Array.isArray(m.recipients)) {
+    throw new Error("manifest.recipients must be an array");
+  }
+  const recipients = parseCanonicalRecipients(m.recipients);
+
+  return {
+    version: MANIFEST_VERSION,
+    provenance,
+    batchSize: m.batchSize,
+    recipients,
+  };
+}
+
+/** Derived: the recipient cap equals the exact unique recipient count. */
+export function recipientCap(manifest: Manifest): bigint {
+  return BigInt(manifest.recipients.length);
+}
+
+/** Derived: `recipientCap * TOKEN_PER_RECIPIENT`. */
+export function maximumSupply(manifest: Manifest): bigint {
+  return recipientCap(manifest) * TOKEN_PER_RECIPIENT;
+}
+
+/** Split the canonical recipients into deterministic batches of at most `batchSize`. */
+export function splitBatches(manifest: Manifest): Batch[] {
+  const batches: Batch[] = [];
+  for (
+    let offset = 0;
+    offset < manifest.recipients.length;
+    offset += manifest.batchSize
+  ) {
+    batches.push({
+      number: batches.length + 1,
+      recipients: manifest.recipients.slice(
+        offset,
+        offset + manifest.batchSize,
+      ),
+    });
+  }
+  return batches;
+}
+
+/** Deterministic pretty JSON serialization with a trailing newline. */
 export function manifestToJson(manifest: Manifest): string {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
-/** Reviewable CSV: one row per recipient with batch number, position, and checksummed address. */
+/** Reviewable CSV: exactly one row per recipient, with the derived batch number and 1-based index. */
 export function manifestToCsv(manifest: Manifest): string {
-  const rows: string[] = [
-    "batch_number,position_in_batch,cumulative_index,address",
-  ];
-  let cumulativeIndex = 0;
-  for (const batch of manifest.batches) {
-    batch.recipients.forEach((address, position) => {
-      cumulativeIndex += 1;
-      rows.push(
-        `${batch.batchNumber},${position + 1},${cumulativeIndex},${address}`,
-      );
-    });
+  const rows = ["batch,index,address"];
+  let index = 0;
+  for (const batch of splitBatches(manifest)) {
+    for (const address of batch.recipients) {
+      index += 1;
+      rows.push(`${batch.number},${index},${address}`);
+    }
   }
   return `${rows.join("\n")}\n`;
 }
