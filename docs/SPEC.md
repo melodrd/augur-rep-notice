@@ -94,6 +94,13 @@ function finalizeDistribution() external
 
 Only the distributor may call it. A successful call sets `distributionFinalized = true` permanently and emits `DistributionFinalized(distributor, totalInitialRecipients, balanceOf(address(this)))`. Repeated finalization reverts (`DistributionAlreadyFinalized`). Finalization closes reserve distribution only; it does not freeze the token — holder transfers, approvals, and `transferFrom` all continue, total supply is unchanged, and unused reserve remains locked. The entire reserve need not be distributed before finalizing.
 
+The event's third field, `contractBalanceAtFinalization`, is the token contract's complete live balance `balanceOf(address(this))` at the moment of finalization. Two distinct quantities must not be conflated:
+
+- **Remaining initial allocation** — `(recipientCap - totalInitialRecipients) * TOKEN_PER_RECIPIENT`. The base units of the original allocation not yet distributed to initial recipients.
+- **Token contract balance** — `balanceOf(address(this))`. The complete live balance held by the token contract. It may include the remaining initial allocation *and* any tokens holders voluntarily transferred back to the contract.
+
+These two values are equal before any holder returns tokens to the contract, but they are not guaranteed to remain equal, because MREP2 is freely transferable and a holder may transfer a token to `address(this)`. The event therefore records the complete contract balance, not a mathematically exact undistributed allocation, and must not be labeled `undistributedReserve`. After finalization this balance can no longer leave through `distribute`, though later ordinary transfers into the contract may still increase it.
+
 ## Supply semantics and invariants
 
 ```text
@@ -112,7 +119,7 @@ wasInitialRecipient      only changes false -> true
 event Transfer(address indexed from, address indexed to, uint256 value);        // OpenZeppelin
 event Approval(address indexed owner, address indexed spender, uint256 value);   // OpenZeppelin
 event DistributionFinalized(
-    address indexed distributor, uint256 totalInitialRecipients, uint256 undistributedReserve
+    address indexed distributor, uint256 totalInitialRecipients, uint256 contractBalanceAtFinalization
 );
 ```
 

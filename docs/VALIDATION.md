@@ -16,7 +16,7 @@ This document records reproducible evidence for `MigrateRepV2Token`. It is not a
 | Via IR | disabled |
 | Forge | `1.7.1` |
 | OpenZeppelin Contracts | `v5.6.1` at `5fd1781b1454fd1ef8e722282f86f9293cacf256` |
-| forge-std | `v1.16.1` at `620536fa5277db4e3fd46772d5cbc1ea0696fb43` |
+| forge-std | `v1.16.2` at `bf647bd6046f2f7da30d0c2bf435e5c76a780c1b` |
 | Slither | `0.11.5` |
 | Bun | `1.3.14` |
 
@@ -38,12 +38,12 @@ Focused adjacent double-fault tests lock authorization > finalized, finalized > 
 
 | Suite | Campaign | Result |
 | --- | ---: | --- |
-| Unit (`test/MigrateRepV2Token.t.sol`) | 66 tests | passed |
+| Unit (`test/MigrateRepV2Token.t.sol`) | 67 tests | passed |
 | Fuzz (`test/fuzz/`) | 7 properties x 128 runs | passed |
 | Invariant (`test/invariant/`) | 6 invariants x 16 runs x 64 depth = 1,024 calls each | passed |
 | Deploy script (`test/script/`) | 8 tests | passed |
 | Gas (`test/gas/`) | 14 tests | passed |
-| Total | 101 tests | passed |
+| Total | 102 tests | passed |
 
 The invariant handler drives distribution, transfers, approvals, `transferFrom`, and finalization over a fixed actor pool with zero reverts and zero discards, reconciling total supply, the recipient cap, the full balance set, permanent history, reserve accounting, and post-finalization distribution rejection.
 
@@ -54,7 +54,7 @@ Approximate durations (local):
 | `make test-unit` | ~0.003s Forge / ~0.1s wall |
 | `make test-fuzz` | ~0.5s |
 | `make test-invariant` | ~1.2s |
-| `make test` (ordinary, 87 tests) | ~1.8s |
+| `make test` (ordinary, 88 tests) | ~1.8s |
 | `make gas` | ~0.04s |
 | `make check` | ~10s |
 | `make coverage` | ~4.4s |
@@ -148,7 +148,7 @@ The callable surface is exactly the nine standard ERC-20 functions plus `TOKEN_P
 
 Storage (slots 0-4 are OpenZeppelin ERC-20): `totalInitialRecipients` (slot 5), `distributionFinalized` (slot 6), `wasInitialRecipient` (slot 7). Immutables (`distributor`, `recipientCap`, `maximumSupply`) and constants occupy no mutable storage.
 
-Events: standard `Transfer` and `Approval`, plus `DistributionFinalized(address,uint256,uint256)`. Errors: ten project custom errors plus the six inherited `IERC20Errors`, none wrapped or duplicated.
+Events: standard `Transfer` and `Approval`, plus `DistributionFinalized(address,uint256,uint256)` whose third field is `contractBalanceAtFinalization` — the token contract's complete balance at finalization, not a mathematically exact undistributed allocation; parameter types, indexed fields, and the event topic are unchanged. Errors: ten project custom errors plus the six inherited `IERC20Errors`, none wrapped or duplicated.
 
 Slither (`slither .`, filtered to project source) analyzed the compiled contract set with 101 detectors and reported **0 results**; no finding was suppressed. This is not an audit.
 

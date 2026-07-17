@@ -449,6 +449,37 @@ contract MigrateRepV2TokenTest is Test {
         token.finalizeDistribution();
     }
 
+    /// @dev The event's third value is the contract's complete live balance, not the remaining
+    ///      initial allocation. A holder may transfer a distributed token back to the contract
+    ///      before finalization, so the reported balance can exceed
+    ///      (recipientCap - totalInitialRecipients) * TOKEN_PER_RECIPIENT.
+    function test_finalization_event_reports_complete_contract_balance() public {
+        // One initial recipient who then transfers the token back to the token contract.
+        _distribute(_one(ALICE));
+        vm.prank(ALICE);
+        token.transfer(address(token), ONE);
+
+        // The returned token changes neither the permanent count nor the history flag.
+        assertEq(token.totalInitialRecipients(), 1);
+        assertTrue(token.wasInitialRecipient(ALICE));
+
+        // The complete contract balance exceeds the remaining initial allocation by exactly the
+        // one token ALICE returned, so the two quantities are not equal here.
+        uint256 contractBalance = token.balanceOf(address(token));
+        uint256 remainingAllocation =
+            (token.recipientCap() - token.totalInitialRecipients()) * token.TOKEN_PER_RECIPIENT();
+        assertEq(contractBalance, remainingAllocation + ONE);
+        assertNotEq(contractBalance, remainingAllocation);
+
+        // The event reports the complete contract balance, including the returned token.
+        vm.expectEmit(true, false, false, true, address(token));
+        emit MigrateRepV2Token.DistributionFinalized(DISTRIBUTOR, 1, contractBalance);
+        vm.prank(DISTRIBUTOR);
+        token.finalizeDistribution();
+
+        assertTrue(token.distributionFinalized());
+    }
+
     function test_repeated_finalization_fails() public {
         vm.startPrank(DISTRIBUTOR);
         token.finalizeDistribution();

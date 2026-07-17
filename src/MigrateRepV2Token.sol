@@ -85,9 +85,14 @@ contract MigrateRepV2Token is ERC20 {
     /// @notice Emitted once when the distributor permanently closes distribution.
     /// @param distributor The immutable distributor that finalized.
     /// @param totalInitialRecipients The permanent count of initial recipients at finalization.
-    /// @param undistributedReserve The token balance still held by the contract at finalization.
+    /// @param contractBalanceAtFinalization The token contract's complete MREP2 balance when
+    ///        distribution is finalized. This normally includes the remaining initial-distribution
+    ///        allocation and may also include tokens holders transferred back to the contract, so it
+    ///        is not a mathematically exact undistributed allocation. After finalization this balance
+    ///        can no longer leave through {distribute}, though later ordinary transfers into the
+    ///        contract may still increase its balance after this event.
     event DistributionFinalized(
-        address indexed distributor, uint256 totalInitialRecipients, uint256 undistributedReserve
+        address indexed distributor, uint256 totalInitialRecipients, uint256 contractBalanceAtFinalization
     );
 
     /// @notice Creates the token, fixes the supply, and mints the whole reserve to the contract.
