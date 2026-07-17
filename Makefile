@@ -7,7 +7,7 @@ help:
 	@echo "test         Run Forge and Bun tests"
 	@echo "gas          Run the Forge gas report"
 	@echo "coverage     Run Forge coverage"
-	@echo "audit        Run Slither when production Solidity exists"
+	@echo "audit        Run Slither static analysis"
 	@echo "ops-install  Install pinned Bun dependencies"
 	@echo "ops-check    Run all Bun validation"
 	@echo "check        Run all non-destructive local checks"
@@ -35,11 +35,7 @@ coverage:
 	forge coverage
 
 audit:
-	@if find src -type f -name '*.sol' -print -quit | grep -q .; then \
-		slither .; \
-	else \
-		echo "Slither skipped: no production Solidity source files exist."; \
-	fi
+	slither .
 
 ops-install:
 	cd ops && bun install --frozen-lockfile

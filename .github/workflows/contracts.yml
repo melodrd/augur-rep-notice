@@ -1,4 +1,4 @@
-name: Foundation checks
+name: Contract checks
 
 on:
   pull_request:
@@ -74,10 +74,5 @@ jobs:
       - name: Check contract sizes
         run: forge build --sizes
 
-      - name: Run Slither when production Solidity exists
-        run: |
-          if find src -type f -name '*.sol' -print -quit | grep -q .; then
-            slither .
-          else
-            echo "Slither skipped: no production Solidity source files exist."
-          fi
+      - name: Run Slither
+        run: slither .

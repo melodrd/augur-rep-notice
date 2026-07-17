@@ -1,583 +1,164 @@
 # AGENTS.md
 
-## 1. Purpose
+## Purpose
 
-This repository contains smart-contract and operational tooling for an experimental Augur REP migration-awareness campaign.
+This repository contains the contract and operational tooling for CHECK AUGUR REP MIGRATION, a minimal non-economic
+on-chain alert. It is not REP, migrated REP, replacement REP, a claim, reward, governance asset, or tradable
+instrument.
 
-The project may distribute one non-economic on-chain alert to selected addresses. The alert is not REP, migrated REP, replacement REP, a claim, a reward, a governance asset, or a tradable instrument.
+Treat contract changes, recipient transformations, deployment preparation, and transaction artifacts as
+security-sensitive production infrastructure. A passing build is not evidence of an audit, safety, usefulness, or
+deployment readiness.
 
-This is a security-sensitive Ethereum project. Treat contract changes, recipient-data transformations, deployment preparation, and transaction artifacts as production infrastructure.
-
-## 2. Instruction priority
+## Source of authority
 
 When instructions conflict, follow:
 
-1. Explicit human instructions in the current task.
-2. [`docs/product/SPEC.md`](docs/product/SPEC.md).
-3. [`docs/security/THREAT_MODEL.md`](docs/security/THREAT_MODEL.md).
-4. [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md).
+1. Explicit human instructions for the current task.
+2. [docs/SPEC.md](docs/SPEC.md) for required contract behavior.
+3. [docs/OPERATIONS.md](docs/OPERATIONS.md) for recipient, deployment, wallet, and communications controls.
+4. [docs/VALIDATION.md](docs/VALIDATION.md) for current evidence and known limitations.
 5. This file.
 6. Existing tests and code comments.
-7. General conventions.
 
-Stop before changing code when a request conflicts with a security invariant or approved contract behavior.
+Stop before changing code when a request conflicts with a security invariant or approved behavior.
 
-## 3. Current status and default mode
+## Current contract invariants
 
-Status:
-
-- Foundation: complete.
-- V2 product specification: complete.
-- V2 threat model and acceptance criteria: complete.
-- V2 core contract candidate: implemented and locally validated.
-- Maximum batch enforcement: unresolved pending an approved target-chain block gas limit and independent review.
-
-Default mode:
-
-- Work locally.
-- Do not access an Ethereum RPC unless the current task explicitly authorizes it.
-- Do not handle production secrets.
-- Do not create or inspect a private key or wallet unless a human explicitly requests a permitted test-only operation.
-- Do not modify mainnet recipient data without an explicit request.
-- Do not deploy to mainnet.
-- Do not sign, submit, or broadcast transactions.
-- Do not weaken tests or silently change contract behavior.
-
-A passing build is not evidence that the system is safe, audited, useful, or ready for deployment.
-
-## 4. Approved architecture summary
-
-The product specification is authoritative. Keep these high-level constraints aligned with it:
-
-- Fixed name: `CHECK AUGUR REP MIGRATION`.
-- Fixed symbol: `MIGRATEREP`.
-- Decimals: `0`.
-- Unit per successful recipient: `1`.
-- Initial supply: `0`.
-- Metadata is compiled into the contract, not supplied to the constructor.
-- The checksummed deployed contract address published through official Augur sources is the canonical identity.
-- One `distribute(address[] recipients)` path serves canaries and batches.
-- Distribution is strictly atomic.
-- The constructor receives one nonzero immutable authority and one nonzero immutable cap.
-- The cap equals the final approved manifest’s unique-address count.
-- The approved production authority is one dedicated EOA controlled by the project owner.
-- The same EOA is expected to deploy and be supplied explicitly as authority.
+- Fixed metadata is CHECK AUGUR REP MIGRATION, MIGRATEREP, and zero decimals.
+- Construction starts with zero issuance and requires one nonzero immutable authority and cap.
 - Deployment alone grants no privilege.
-- Authority transfer, recovery, successor nomination, ownership, and secondary roles are absent.
-- Transfers, transfer-from, approvals, permits, allowance helpers, operator approvals, and delegated or
-  authority-controlled burns are disabled or absent.
-- One holder-only `burn()` path lets an active holder remove only their own unit.
-- `totalIssued` permanently counts unique addresses ever alerted, while `totalSupply` counts active, unburned units.
-- `wasAlerted(address)` permanently distinguishes never-alerted addresses from addresses that later self-burned.
-- The immutable cap applies to `totalIssued`; burning never restores issuance capacity.
+- Recipient state moves only from NeverAlerted to Active to Burned.
+- distribute(address[]) is the sole issuance path and is strictly atomic.
+- Validation order is authority, finalized, empty, maximum batch, lifetime cap, then recipients.
+- MAX_BATCH_SIZE is a compile-time public constant equal to 500.
+- Operational batches should normally contain about 100–200 recipients.
+- Every successful recipient receives exactly one unit and one ordered Transfer event.
+- Zero, duplicate, active, and previously burned recipients are rejected.
+- totalIssued counts unique addresses ever alerted and only increases.
+- totalSupply counts active, unburned units.
+- wasAlerted is permanent, including after burn.
+- totalSupply <= totalIssued <= distributionCap.
+- Burning never restores cap capacity or permits reissuance.
+- Only an active holder can burn their own unit, before or after finalization.
+- Only the immutable authority distributes or finalizes.
 - Finalization is explicit, irreversible, and permanently closes issuance.
-- Holder self-burn remains available after finalization.
-- No proxy, upgrade, external call, REP interaction, migration-contract interaction, payable path, withdrawal, or recovery helper exists.
-- The production contract is standalone and does not inherit generalized token or administration frameworks.
+- Transfers and approvals always fail; allowance is always zero.
 
-Any behavioral change requires a specification revision, threat-model review, and acceptance-criteria update.
+Any behavioral change requires specification, threat, acceptance-criteria, and test review.
 
-## 5. Non-goals
+## Prohibited functionality
 
 Do not add:
 
-- DEX, liquidity, pricing, taxation, rebasing, staking, vesting, or yield behavior;
-- claims, redemptions, user minting, wallet-connect, or interaction-based migration flows;
-- bridges, cross-chain messaging, oracles, callbacks, hooks, or arbitrary multicalls;
-- permit, meta-transaction, ERC-1363, ERC-777, ERC-4626, NFT, URI, or dynamic metadata behavior;
-- proxies, upgrades, delegatecall modules, diamonds, governance, or unrelated timelocks;
-- token recovery, ETH withdrawal, or arbitrary external-call helpers;
-- authority transfer, recovery, secondary administration, or hidden deployer powers;
-- frontend work before the contract and operational specification are stable.
-
-Do not use the legacy Solidity `0.7.x` generator contract as the production base.
-
-## 6. Technology and version policy
-
-### Solidity
-
-Use:
-
-- Solidity;
-- Foundry, Forge, Anvil, and Cast;
-- `forge-std`;
-- Slither.
-
-The production contract must not inherit OpenZeppelin `ERC20`, `Ownable`, `Ownable2Step`, `AccessControl`, `Pausable`, proxy, upgradeable, or generalized token contracts.
-
-Do not add Hardhat, Truffle, Brownie, or a second Solidity framework without approval.
-
-### TypeScript operations
-
-Use:
-
-- TypeScript;
-- Bun for package management, runtime, and tests;
-- `tsc --noEmit`;
-- Biome;
-- viem;
-- Zod or equivalent schema validation;
-- deterministic JSON and CSV;
-- cryptographic checksums.
-
-Do not:
-
-- add `tsx`;
-- run npm or pnpm repository installs;
-- create `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock`;
-- use JavaScript `number` or floating-point arithmetic for on-chain balances;
-- create a Python project without a concrete requirement.
-
-Use `bigint` for on-chain integers. Use `uv tool` for pinned Python CLI tools.
-
-### Pins
-
-- Pin the Solidity compiler exactly in `foundry.toml`.
-- Initial compiler target is Solidity `0.8.36` unless explicitly revised.
-- Pin Foundry dependencies to tags or immutable commits.
-- Commit lockfiles and dependency metadata.
-- Do not use floating tags.
-- Do not change compiler, optimizer, EVM, IR, or dependency versions in an unrelated change.
-- Put dependency upgrades in isolated reviewed commits.
-
-Repository configuration is the source of truth after initialization.
-
-## 7. Repository structure
-
-Preserve the documented structure unless a reviewed change justifies another layout.
-
-```text
-.
-├── AGENTS.md
-├── README.md
-├── docs/
-│   ├── README.md
-│   ├── product/
-│   │   ├── SPEC.md
-│   │   └── DECISIONS.md
-│   ├── security/
-│   │   └── THREAT_MODEL.md
-│   ├── operations/
-│   │   ├── DEPLOYMENT_RUNBOOK.md
-│   │   └── ETHERSCAN_RUNBOOK.md
-│   ├── communications/
-│   │   └── MESSAGING.md
-│   ├── planning/
-│   │   └── ROADMAP.md
-│   └── reports/
-├── src/
-├── test/
-├── script/
-├── ops/
-├── data/
-├── deployments/
-└── .github/
-```
-
-Generated build artifacts belong in ignored directories such as `out/`, `cache/`, and local temporary folders.
-
-Never commit secrets, RPC credentials, private recipient notes, or personal data.
-
-## 8. Solidity design rules
-
-Prefer the smallest implementation that satisfies the specification.
-
-Use:
-
-- exact pragma and SPDX identifier;
-- NatSpec on external and public functions;
-- descriptive custom errors and events;
-- checks before effects;
-- named constants instead of magic numbers;
-- explicit standalone logic.
-
-Avoid:
-
-- unnecessary inheritance;
-- generic extension points;
-- low-level calls;
-- assembly;
-- `delegatecall`;
-- `selfdestruct`;
-- fallback or receive functions;
-- dynamic dispatch;
-- unbounded iteration over stored recipient sets;
-- `tx.origin`;
-- timestamp dependencies, randomness, or unsafe casts;
-- `unchecked` blocks without proof, tests, and comments;
-- test-only public functions;
-- commented-out production code;
-- unresolved TODOs or suppressed compiler warnings.
-
-Every externally callable function needs a documented purpose.
-
-### Authority
-
-Use one nonzero constructor-supplied immutable authority.
-
-- The deployer has no implicit privilege.
-- Production policy intentionally uses the same dedicated EOA as deployer and authority.
-- Contract logic must not derive authority from `msg.sender` during construction or require deployer/authority equality.
-- An unrelated deployer must receive no privilege when another address is supplied as authority.
-- No transfer, acceptance, renunciation, successor, recovery, ownership, or role system exists.
-
-### Dedicated production EOA
-
-The EOA:
-
-- is controlled by the project owner;
-- is dedicated to the campaign;
-- is not an everyday wallet;
-- has no intentional unrelated token, protocol, or DeFi activity;
-- holds only reasonably required operational ETH;
-- should use hardware-backed signing;
-- uses a mainnet key that is not reused on Sepolia;
-- requires manual review of chain, target, value, calldata, nonce, expected state change, and simulation.
-
-Never request or record its private key, seed phrase, recovery phrase, raw keystore, or secret environment values. Agents may prepare unsigned artifacts only and may never sign, submit, or broadcast.
-
-### Distribution
-
-The distribution path must:
-
-- reject empty arrays;
-- reject the zero address;
-- reject duplicates within a call and all prior recipients, including recipients that self-burned;
-- revert the complete call for any invalid condition;
-- prevent balances above one;
-- reject unauthorized and post-finalization calls;
-- enforce the immutable cap against `totalIssued`;
-- emit one `Transfer(address(0), recipient, 1)` per success;
-- avoid external calls and stored-set iteration.
-
-Do not freeze a maximum batch size until measured gas and calldata evidence supports it. Use a compile-time maximum whose worst-case successful call consumes no more than 50% of the pinned target block gas limit, or a lower reviewed operational bound.
-
-### Finalization and movement
-
-- Transfer and transfer-from always revert, including zero-value transfer.
-- Approval always reverts and allowance is always zero.
-- Permit, allowance helpers, operator approvals, callbacks, authority burn, delegated burn, and `burnFrom` are absent.
-- An active holder may call `burn()` once to change only their own status from active to burned.
-- A successful burn decreases `totalSupply` by one, leaves `totalIssued` unchanged, preserves `wasAlerted`, and emits
-  `Transfer(holder, address(0), 1)`.
-- A never-alerted or already-burned caller cannot burn.
-- Finalization is authorized, explicit, irreversible, and repeated calls revert.
-- No path can restore issuance after finalization.
-- Finalization does not disable valid holder self-burn.
-
-## 9. Security invariants
-
-Tests and reviews must establish:
-
-- no address balance exceeds one;
-- zero address balance remains zero;
-- balances cannot move and only an active holder can burn their own unit;
-- `wasAlerted` is permanent and false only for never-alerted addresses;
-- burned addresses remain permanently ineligible for reissuance;
-- `totalIssued` equals unique successful recipients and only increases;
-- `totalSupply` equals active, unburned units;
-- `totalSupply <= totalIssued <= distributionCap`;
-- failed calls do not change state;
-- only the immutable authority distributes or finalizes;
-- no authority, deployer, outsider, operator, or approved spender can burn another account;
-- no deployer, owner, role, recovery, or secondary privilege exists;
-- authority loss creates no replacement administrator;
-- authority compromise cannot bypass the cap;
-- finalization cannot be reversed;
-- no REP, ETH-send, arbitrary-call, upgrade, proxy, or delegatecall capability exists;
-- deterministic artifacts, canonical ordering, explicit exclusion reasons, and checksums are used off-chain.
-
-Invariant tests must exercise sequences of authorized and unauthorized actions rather than isolated calls only.
-
-## 10. Recipient-data rules
-
-Recipient selection is security- and reputation-sensitive business logic.
-
-### Required snapshot metadata
-
-Record:
-
-- chain ID;
-- RPC source category without secrets;
-- block number, hash, and timestamp;
-- REP and migration contract addresses queried;
-- holder-discovery method;
-- balance threshold;
-- included versions or universes;
-- exclusion rules;
-- script commit hash;
-- generation timestamp;
-- output checksum.
-
-### Address handling
-
-- Validate every address.
-- Preserve checksum format in human-facing outputs.
-- Compare normalized addresses case-insensitively.
-- Reject malformed and zero addresses.
-- Deduplicate deterministically.
-- Sort canonically.
-- Never guess, autocomplete, or infer addresses from prose.
-- Do not classify an address as EOA, contract, exchange, or protocol without evidence.
-- Do not exclude contracts merely because bytecode exists.
-
-### Balances
-
-- Use raw integer balances and `bigint`.
-- Apply decimals explicitly.
-- Define the exact queried block.
-- Fail closed when required historical state is unavailable.
-
-### Filtering
-
-Every rule needs:
-
-- a stable identifier;
-- a plain-language description;
-- deterministic implementation;
-- tests;
-- affected-address count and report;
-- explicit inclusion or exclusion reason.
-
-Do not silently drop records.
-
-### Outputs
-
-Produce machine-readable JSON, reviewable CSV, summary reports, checksums, batch manifests, and reconciliation reports.
-
-Final batch manifests record batch number, recipient count, first and last canonical address, input checksum, batch
-checksum, expected cumulative `totalIssued`, and separately reconciled active `totalSupply`.
-
-Never edit generated production manifests manually.
-
-## 11. Testing and standard commands
-
-Every behavior change requires tests. Do not weaken or delete tests to obtain a passing result.
-
-Required contract checks, when relevant:
-
-```bash
+- REP or migration-contract interaction, custody, claims, redemptions, or user minting;
+- transferability, approvals, permit, operators, delegated burn, authority burn, or burnFrom;
+- ownership, roles, authority transfer, successor nomination, recovery, or secondary administration;
+- proxy, upgrade, delegatecall, diamond, governance, or generalized extension systems;
+- payable, receive, fallback, withdrawal, token recovery, or arbitrary external-call paths;
+- callbacks, hooks, bridges, oracles, multicalls, wallet-connect, or signature flows;
+- pricing, liquidity, taxes, staking, yield, vesting, rebasing, or other economic behavior;
+- dynamic metadata, token URI, or an on-chain migration URL;
+- frontend or live-chain work before its documented gate.
+
+Do not weaken tests, suppress findings, or silently change behavior.
+
+## Solidity quality
+
+- Keep the production contract standalone, explicit, and small.
+- Use exact pragmas, SPDX identifiers, NatSpec, named constants, custom errors, and precise events.
+- Prefer simple control flow, checks before effects, minimal storage, and calldata for arrays.
+- Avoid unnecessary inheritance, assembly, low-level calls, magic values, unsafe casts, and dynamic dispatch.
+- Do not use unchecked arithmetic without a documented proof, material benchmark, and focused tests.
+- Do not add test-only production functions, dead code, commented alternatives, unresolved TODOs, or warning suppressions.
+- Every public or external function and every state variable must have a necessary, documented purpose.
+- Preserve atomic rollback, event order, binary balances, permanent history, and exact accounting.
+
+## Toolchain
+
+Canonical Solidity settings in foundry.toml are:
+
+- Solidity 0.8.36;
+- EVM Osaka;
+- optimizer enabled with 200 runs;
+- via IR disabled.
+
+Use Foundry, forge-std, and Slither. CI pins Foundry 1.7.1, Slither 0.11.5, Bun 1.3.14, and uv 0.11.28. Do not add
+Hardhat, Truffle, Brownie, or another Solidity framework without approval. Pin dependencies to tags or immutable
+commits and isolate upgrades from behavioral changes.
+
+## TypeScript operations
+
+- Bun is the sole JavaScript package manager; Node.js is only a compatibility fallback.
+- Never run repository installs with npm or pnpm.
+- Do not create package-lock.json, pnpm-lock.yaml, or yarn.lock.
+- Install reproducibly with bun install --frozen-lockfile.
+- Bun may execute TypeScript, but tsc --noEmit is mandatory static type checking.
+- Biome performs TypeScript formatting and linting.
+- Use viem, Zod schemas, deterministic JSON and CSV, and cryptographic checksums.
+- Use bigint for on-chain integers and balances; never use floating-point arithmetic.
+- Keep Bun-specific runtime APIs to the minimum needed for portability.
+
+## Default safety boundary
+
+- Work locally unless the task explicitly authorizes another environment.
+- Do not access an Ethereum RPC without explicit authorization.
+- Do not request, inspect, create, import, or store a production private key, seed phrase, keystore, or secret.
+- Do not create or operate the production authority wallet.
+- Do not put secrets in environment files, commands, logs, documentation, or Git.
+- Do not deploy to mainnet.
+- Do not sign, submit, or broadcast transactions.
+- Sepolia work requires explicit instruction and a separate test-only key controlled by a human.
+- Agents may prepare unsigned artifacts and local simulations only when the task authorizes them.
+
+## Recipient data
+
+- Do not invent REP sources, universes, migration semantics, snapshot blocks, thresholds, exclusions, or addresses.
+- Record chain ID, block number/hash/timestamp, source contracts, discovery method, rules, script commit, timestamp,
+  and output checksum.
+- Validate every address, reject malformed and zero addresses, normalize comparisons, checksum human-facing output,
+  deduplicate deterministically, and sort canonically.
+- Use raw integer balances and bigint; fail closed when historical state is unavailable.
+- Give every inclusion or exclusion a stable reason code and affected-address report.
+- Generate JSON, reviewable CSV, summaries, checksums, batch manifests, and reconciliation reports.
+- Never manually edit generated production manifests.
+- The final unique manifest count must exactly equal distributionCap.
+
+## Required validation
+
+Run proportionate checks after changes and the full suite for a candidate:
+
+~~~bash
 forge fmt --check
 forge build
 forge build --sizes
 forge test
 forge test -vvv
 forge test --gas-report
-forge snapshot
+FOUNDRY_SNAPSHOTS=/tmp/rep-alert-snapshot-values \
+  forge snapshot --snap /tmp/rep-alert-gas.snapshot
 forge coverage
 slither .
-```
+(cd ops && bun install --frozen-lockfile)
+(cd ops && bun run check)
+make check
+git diff --check
+~~~
 
-Required TypeScript checks use repository Bun scripts and include:
+Inspect ABI, method identifiers, storage layout, events, and errors for contract changes. Classify every compiler or
+Slither finding; do not suppress it without a documented reason. Coverage and passing tests are diagnostics, not a
+security guarantee.
 
-```bash
-bun install --frozen-lockfile
-bun run typecheck
-bun run lint
-bun test
-```
+## Git discipline
 
-Always run `tsc --noEmit`; Bun transpilation alone is not type checking.
+- Before editing, inspect git status, git diff, and recent commits.
+- Preserve unrelated work and never reformat unrelated files.
+- Keep changes small, reviewable, and covered by tests.
+- Use Conventional Commits and do not combine dependency upgrades with behavior changes.
+- Review the full diff and git diff --check before staging.
+- Do not blindly stage all files, rewrite shared history, force-push, or commit secrets.
+- Contract and recipient-data changes require separate human review.
 
-Unit, fuzz, invariant, fork, gas, and TypeScript coverage must follow the specification and threat model. Fork tests use a pinned block and never broadcast.
-
-Static-analysis findings are classified as confirmed issue, false positive, accepted behavior, or needing investigation. Do not suppress detectors without a documented reason.
-
-Coverage is a diagnostic, not a security guarantee.
-
-## 12. Deployment and key safety
-
-Local Anvil work is allowed with ephemeral test accounts when the task authorizes implementation or simulation.
-
-Sepolia deployment requires explicit human instruction.
-
-Mainnet agents may only prepare unsigned artifacts, constructor arguments, calldata, simulations, bytecode comparisons, verification commands, and checklists.
-
-Agents must not:
-
-- access or import production keys;
-- request seed phrases or private keys;
-- create a production wallet;
-- store secrets in `.env`;
-- sign, submit, or broadcast;
-- operate the production authority EOA;
-- run `forge script --broadcast`, `cast send`, wallet import, publishing, hardware-wallet signing, or equivalent commands without an explicitly permitted human-controlled task.
-
-Human operators alone review, sign, submit, broadcast, monitor, reconcile, and finalize.
-
-## 13. Verification records
-
-For each deployment environment, record:
-
-- network and chain ID;
-- contract address and deployment transaction;
-- deployer and immutable authority;
-- immutable cap;
-- source commit;
-- compiler and optimizer settings;
-- constructor arguments;
-- creation and runtime bytecode hashes;
-- source-verification status;
-- deployment block and timestamp;
-- metadata, `totalIssued`, `totalSupply`, and representative `wasAlerted` reads;
-- finalization state;
-- relevant transaction hashes.
-
-Post-deployment checks compare chain, bytecode, metadata, supply, authority, cap, disabled movement, authorization, and finalization state. Transaction success alone is not sufficient evidence.
-
-## 14. Threat categories
-
-Consider at least:
-
-- unauthorized issuance, cap bypass, accidental transferability, approvals, duplicates, unauthorized or delegated burn,
-  burn-accounting errors, reissuance after burn, supply errors, finalization bypass, external calls, and upgrade paths;
-- EOA key loss, compromise, malware, wrong-chain signing, bad calldata, nonce errors, excessive funding, unrelated activity, unsafe backup, and unrecoverable authority;
-- wrong source contracts, snapshot, discovery, migration classification, exclusions, ordering, checksums, or manifest count;
-- wrong network, constructor values, bytecode, batch, nonce, replacement, reconciliation, or finalization timing;
-- user confusion, fake metadata, fake price or liquidity, malicious links, incorrect official address publication, and unguaranteed third-party display.
-
-Update the threat model when implementation or operations introduce a new risk.
-
-## 15. Communications constraints
-
-Documentation must consistently state:
-
-- `CHECK AUGUR REP MIGRATION` is an alert only;
-- it is not REP, migrated REP, replacement REP, a claim, or an asset with value;
-- receiving it performs no migration and grants no right;
-- no recipient interaction is required;
-- `MIGRATEREP` refers to the migration subject and is not REP or an instruction to perform migration;
-- hiding the alert through wallet controls is acceptable where available;
-- an active holder may optionally self-burn directly through the verified canonical contract;
-- burning is not required, provides no migration or economic benefit, and cannot erase transaction history, events, or
-  third-party cached records;
-- users should not approve, transfer, swap, bridge, claim, sign, use a third-party burn site, or connect a wallet
-  because of it;
-- nobody can burn another recipient's alert;
-- the canonical contract address must be verified through official Augur sources;
-- identical metadata and third-party prices do not prove authenticity or value;
-- third-party display is not guaranteed.
-
-Do not place a migration URL in contract metadata or storage.
-
-Etherscan is the only third-party metadata surface currently in scope. Follow
-[`docs/operations/ETHERSCAN_RUNBOOK.md`](docs/operations/ETHERSCAN_RUNBOOK.md)
-for source verification, metadata, logo, evidence, and correction work.
-
-Browser and mobile wallets, portfolio trackers, token lists, CoinGecko, CoinMarketCap, and other market-data or asset-listing services are deferred for a later specification and operations review. No wallet-product matrix or submission to those services is currently approved, and no release gate depends on their inclusion.
-
-## 16. Git and change management
-
-Before editing:
-
-```bash
-git status
-git diff
-git log -n 5 --oneline
-```
-
-Rules:
-
-- Preserve unrelated user work.
-- Keep changes small and reviewable.
-- Do not reformat unrelated files.
-- Do not combine dependency upgrades with behavior changes.
-- Do not rewrite history or force-push.
-- Do not commit secrets or local environment files.
-- Require human review for production-contract changes.
-- Require separate human review for recipient-data changes.
-- Use Conventional Commits.
-
-Commit subjects follow:
-
-```text
-<type>(<optional-scope>): <imperative summary>
-```
-
-After editing, review the full diff and report files changed, behavior, tests, commands, unresolved findings, and deployment impact.
-
-## 17. Working method
-
-For substantive tasks:
-
-1. Read this file completely.
-2. Read relevant project documents.
-3. Inspect repository state, implementation, and tests.
-4. State the intended change and security impact.
-5. Make the smallest coherent diff.
-6. Add or update tests for behavior changes.
-7. Run proportionate required checks.
-8. Review the diff.
-9. Report results and unresolved risks.
-
-Do not assume missing security, eligibility, authority, or deployment requirements. Ask or stop when an ambiguity would materially change those areas.
-
-After code changes, report:
-
-1. What changed.
-2. Why.
-3. Security implications.
-4. Tests added or changed.
-5. Commands and results.
-6. Remaining assumptions or blockers.
-7. Whether deployment artifacts changed.
-
-Never describe the contract as secure or audited without a qualified audit. Use evidence-limited wording such as “No issue was observed in the tested paths.”
-
-## 18. Prohibited agent behavior
-
-Never:
-
-- claim an audit or absence of vulnerabilities;
-- invent addresses, snapshot blocks, eligibility rules, transaction hashes, gas results, or organizational control;
-- expose or request secret material;
-- print secret environment variables;
-- commit `.env`;
-- deploy to mainnet;
-- sign, submit, or broadcast production transactions;
-- relax invariants or suppress warnings without approval;
-- add hidden authority, upgradeability, arbitrary calls, transferability, economic use, claims, approvals, authority
-  burn, delegated burn, `burnFrom`, or any destruction path beyond the approved holder-only `burn()`;
-- infer wallet or explorer display without evidence.
-
-## 19. Definition of done
-
-A contract task is complete only when behavior matches the specification, the diff is minimal, required formatting/build/size/test/fuzz/invariant/fork/gas/coverage/static-analysis checks are reviewed, documentation is current, no secret or unauthorized deployment is introduced, and assumptions are explicit.
-
-A data task is complete only when schemas, inputs, deterministic outputs, validation, `bigint` balance handling, reason-coded filtering, checksums, tests, reconciliation, and reproducibility are complete.
-
-A deployment-preparation task is complete only when artifacts remain unsigned, target chain and contract are exact, constructor data and bytecode hashes are recorded, simulation succeeds, verification and post-deployment checks are prepared, no production key is accessed, and no transaction is broadcast.
-
-## 20. Release gates and deferred values
-
-Human maintainers alone approve release gates for:
-
-1. specification;
-2. contract implementation and review;
-3. recipient data;
-4. Sepolia rehearsal;
-5. mainnet preparation;
-6. human-controlled execution and finalization.
-
-Do not call the project mainnet-ready until every applicable gate is approved.
-
-Do not guess:
-
-- REP contracts or universes;
-- migration definition;
-- snapshot block;
-- threshold or exclusions;
-- final recipient manifest or numeric cap;
-- maximum batch size;
-- exact dedicated production EOA;
-- non-secret EOA storage and backup evidence;
-- canary size or stop conditions;
-- official canonical page URL;
-- incident-response procedure;
-- deployment commit or bytecode hashes.
-
-## 21. Final principle
-
-This is a holder-safety and communications system implemented with Ethereum contracts.
-
-The correct design is the smallest verifiable mechanism that tests the communication hypothesis without creating unnecessary financial, administrative, or scam risk.
+After changes, report behavior, security implications, tests, commands, unresolved risks, and deployment-artifact
+impact. Use evidence-limited language such as “No issue was observed in the tested paths”; never call the work an
+audit or claim vulnerabilities are absent.

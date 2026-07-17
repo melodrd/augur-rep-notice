@@ -13,7 +13,7 @@ function compareAddresses(left: string, right: string): number {
   return 0;
 }
 
-test("foundation dependencies handle deterministic Ethereum data locally", () => {
+test("operations dependencies handle deterministic Ethereum data locally", () => {
   const addresses = [
     addressSchema.parse("0x0000000000000000000000000000000000000002"),
     addressSchema.parse("0x0000000000000000000000000000000000000001"),
