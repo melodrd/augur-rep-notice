@@ -9,6 +9,7 @@
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
     "manifest": "bun run src/cli.ts",
+    "plan": "bun run src/plan-cli.ts",
     "test": "bun test",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun test"
   },

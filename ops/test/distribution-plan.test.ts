@@ -230,6 +230,28 @@ describe("buildDistributionPlan", () => {
 
     expect(JSON.parse(JSON.stringify(manifest))).toEqual(snapshot);
   });
+
+  test("rejects a manifest tampered after being built, even though it still satisfies the Manifest type", () => {
+    // A single batch (batchSize > count) keeps the fixture to one remaining-allocation figure.
+    const manifest = manifestOf(3, 5);
+    const tamperedCap = 999n;
+    const tampered: Manifest = {
+      ...manifest,
+      recipientCap: tamperedCap.toString(10),
+      batches: manifest.batches.map((batch) => ({
+        ...batch,
+        // Keep this figure consistent with the tampered cap so the test isolates the
+        // recipientCap/count cross-check rather than tripping an earlier one.
+        expectedRemainingInitialAllocationAfter: (
+          (tamperedCap - BigInt(batch.cumulativeRecipients)) *
+          TOKEN_PER_RECIPIENT
+        ).toString(10),
+      })),
+    };
+    expect(() => planOf(tampered)).toThrow(
+      /recipientCap 999 does not equal the total unique recipient count 3/,
+    );
+  });
 });
 
 describe("distributionPlanToJson", () => {

@@ -3,6 +3,7 @@ import { getAddress } from "viem";
 import {
   type BuildOptions,
   buildManifest,
+  type Manifest,
   MANIFEST_SCHEMA_VERSION,
   MAX_BATCH_SIZE,
   manifestToCsv,
@@ -11,6 +12,7 @@ import {
   normalizeRecipients,
   type RecipientProvenance,
   TOKEN_PER_RECIPIENT,
+  validateManifest,
 } from "../src/manifest.ts";
 
 function addr(n: number): string {
@@ -351,5 +353,280 @@ describe("serialization", () => {
     expect(lines).toHaveLength(1 + 3); // header + 3 recipients
     expect(lines[1]).toContain("1,1,1,");
     expect(lines[3]).toContain("2,1,3,");
+  });
+});
+
+describe("validateManifest", () => {
+  interface MutableBatch {
+    batchNumber: number;
+    recipientCount: number;
+    firstAddress: string;
+    lastAddress: string;
+    batchChecksum: string;
+    cumulativeRecipients: number;
+    expectedRemainingInitialAllocationAfter: string;
+    recipients: string[];
+  }
+
+  interface MutableManifest {
+    schemaVersion: number;
+    provenance: { chainId: number; [key: string]: unknown };
+    tokenPerRecipient: string;
+    recipientCap: string;
+    operationalBatchSize: number;
+    maximumSupply: string;
+    canonicalSortRule: string;
+    canonicalRecipientsChecksum: string;
+    manifestChecksum: string;
+    batches: MutableBatch[];
+  }
+
+  /** Round-trips a built manifest through JSON, exactly as loading it from a file would. */
+  function serialize(manifest: Manifest): MutableManifest {
+    return JSON.parse(JSON.stringify(manifest)) as MutableManifest;
+  }
+
+  test("accepts a valid serialized manifest and returns it normalized", () => {
+    const manifest = build(
+      Array.from({ length: 5 }, (_, i) => addr(i + 1)),
+      2,
+    );
+    expect(validateManifest(serialize(manifest))).toEqual(manifest);
+  });
+
+  test("rejects an unsupported schema version", () => {
+    const manifest = build([addr(1)], 1);
+
+    const v1 = serialize(manifest);
+    v1.schemaVersion = 1;
+    expect(() => validateManifest(v1)).toThrow(
+      /unsupported manifest schema version/,
+    );
+
+    const v3 = serialize(manifest);
+    v3.schemaVersion = 3;
+    expect(() => validateManifest(v3)).toThrow(
+      /unsupported manifest schema version/,
+    );
+  });
+
+  test("rejects invalid provenance", () => {
+    const manifest = build([addr(1)], 1);
+    const tampered = serialize(manifest);
+    tampered.provenance.chainId = 0;
+    expect(() => validateManifest(tampered)).toThrow(
+      /chainId must be positive/,
+    );
+  });
+
+  test("rejects a tokenPerRecipient other than 1e18", () => {
+    const manifest = build([addr(1)], 1);
+    const tampered = serialize(manifest);
+    tampered.tokenPerRecipient = "2000000000000000000";
+    expect(() => validateManifest(tampered)).toThrow(
+      /tokenPerRecipient must equal/,
+    );
+  });
+
+  test("rejects a recipientCap that does not equal the total unique recipient count", () => {
+    const manifest = build([addr(1), addr(2)], 5);
+    const tampered = serialize(manifest);
+    tampered.recipientCap = "3";
+    // Keep the per-batch remaining-allocation figure consistent with the tampered cap so this
+    // test isolates the recipientCap/count cross-check rather than tripping an earlier one.
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.expectedRemainingInitialAllocationAfter =
+      TOKEN_PER_RECIPIENT.toString(10);
+    expect(() => validateManifest(tampered)).toThrow(
+      /recipientCap 3 does not equal the total unique recipient count 2/,
+    );
+  });
+
+  test("rejects a maximumSupply that does not equal recipientCap * tokenPerRecipient", () => {
+    const manifest = build([addr(1), addr(2)], 2);
+    const tampered = serialize(manifest);
+    tampered.maximumSupply = "1";
+    expect(() => validateManifest(tampered)).toThrow(
+      /maximumSupply 1 does not equal recipientCap \* tokenPerRecipient/,
+    );
+  });
+
+  test("rejects non-sequential batch numbers", () => {
+    const manifest = build(
+      Array.from({ length: 5 }, (_, i) => addr(i + 1)),
+      2,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[1];
+    if (!batch) throw new Error("fixture must have a second batch");
+    batch.batchNumber = 5;
+    expect(() => validateManifest(tampered)).toThrow(
+      /batch numbers must be sequential/,
+    );
+  });
+
+  test("rejects a manifest with no batches", () => {
+    const manifest = build([addr(1)], 1);
+    const tampered = serialize(manifest);
+    tampered.batches = [];
+    expect(() => validateManifest(tampered)).toThrow(/at least one batch/);
+  });
+
+  test("rejects a batch exceeding the maximum batch size", () => {
+    const manifest = build([addr(1), addr(2)], 2);
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.recipients = Array.from({ length: MAX_BATCH_SIZE + 1 }, (_, i) =>
+      addr(i + 1),
+    );
+    expect(() => validateManifest(tampered)).toThrow(
+      new RegExp(`at most ${MAX_BATCH_SIZE} recipients`),
+    );
+  });
+
+  test("rejects modified recipient data whose batch checksum was not recomputed", () => {
+    // Spaced-out recipients leave room to swap in a different, still-in-order address.
+    const manifest = build([addr(1), addr(10), addr(20)], 5);
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.recipients[1] = getAddress(addr(15));
+    expect(() => validateManifest(tampered)).toThrow(
+      /batch 1 checksum does not match/,
+    );
+  });
+
+  test("rejects a duplicate recipient", () => {
+    const manifest = build(
+      Array.from({ length: 3 }, (_, i) => addr(i + 1)),
+      5,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.recipients[1] = batch.recipients[0] as string;
+    expect(() => validateManifest(tampered)).toThrow(
+      /duplicate recipient address/,
+    );
+  });
+
+  test("rejects an unsorted recipient list", () => {
+    const manifest = build(
+      Array.from({ length: 3 }, (_, i) => addr(i + 1)),
+      5,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    const [first, second] = batch.recipients;
+    batch.recipients[0] = second as string;
+    batch.recipients[1] = first as string;
+    expect(() => validateManifest(tampered)).toThrow(/not canonically sorted/);
+  });
+
+  test("rejects a zero-address recipient", () => {
+    const manifest = build(
+      Array.from({ length: 3 }, (_, i) => addr(i + 1)),
+      5,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.recipients[1] = addr(0);
+    expect(() => validateManifest(tampered)).toThrow(/zero address/);
+  });
+
+  test("rejects a malformed recipient address", () => {
+    const manifest = build(
+      Array.from({ length: 3 }, (_, i) => addr(i + 1)),
+      5,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.recipients[1] = "0xnotanaddress";
+    expect(() => validateManifest(tampered)).toThrow(
+      /not a valid Ethereum address/,
+    );
+  });
+
+  test("rejects a recipient not in canonical EIP-55 checksummed form", () => {
+    // addr(1) and addr(0xffffff) bracket addr(0xabcdef) numerically, so the mixed-case
+    // recipient lands at index 1 - a middle position, leaving firstAddress/lastAddress alone.
+    const manifest = build([addr(1), addr(0xabcdef), addr(0xffffff)], 5);
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    const lowered = (batch.recipients[1] as string).toLowerCase();
+    expect(lowered).not.toBe(batch.recipients[1]);
+    batch.recipients[1] = lowered;
+    expect(() => validateManifest(tampered)).toThrow(
+      /not in canonical EIP-55 checksummed form/,
+    );
+  });
+
+  test("rejects an incorrect cumulativeRecipients value", () => {
+    const manifest = build(
+      Array.from({ length: 5 }, (_, i) => addr(i + 1)),
+      2,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.cumulativeRecipients = 999;
+    expect(() => validateManifest(tampered)).toThrow(
+      /cumulativeRecipients 999 does not match the recomputed running total/,
+    );
+  });
+
+  test("rejects an incorrect expectedRemainingInitialAllocationAfter value", () => {
+    const manifest = build(
+      Array.from({ length: 5 }, (_, i) => addr(i + 1)),
+      2,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.expectedRemainingInitialAllocationAfter = "1";
+    expect(() => validateManifest(tampered)).toThrow(
+      /expectedRemainingInitialAllocationAfter 1 does not match the recomputed value/,
+    );
+  });
+
+  test("rejects a modified batch checksum", () => {
+    const manifest = build(
+      Array.from({ length: 5 }, (_, i) => addr(i + 1)),
+      2,
+    );
+    const tampered = serialize(manifest);
+    const batch = tampered.batches[0];
+    if (!batch) throw new Error("fixture must have a first batch");
+    batch.batchChecksum = `sha256:${"0".repeat(64)}`;
+    expect(() => validateManifest(tampered)).toThrow(
+      /batch 1 checksum does not match/,
+    );
+  });
+
+  test("rejects a modified canonicalRecipientsChecksum", () => {
+    const manifest = build(
+      Array.from({ length: 3 }, (_, i) => addr(i + 1)),
+      2,
+    );
+    const tampered = serialize(manifest);
+    tampered.canonicalRecipientsChecksum = `sha256:${"0".repeat(64)}`;
+    expect(() => validateManifest(tampered)).toThrow(
+      /canonicalRecipientsChecksum does not match/,
+    );
+  });
+
+  test("rejects a modified manifestChecksum", () => {
+    const manifest = build([addr(1), addr(2)], 2);
+    const tampered = serialize(manifest);
+    tampered.manifestChecksum = `sha256:${"0".repeat(64)}`;
+    expect(() => validateManifest(tampered)).toThrow(
+      /manifestChecksum does not match/,
+    );
   });
 });

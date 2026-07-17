@@ -192,8 +192,8 @@ contract MigrateRepV2Token is ERC20 {
 
     /// @notice Permanently closes reserve distribution.
     /// @dev Only the distributor may call this. Standard transfers, approvals, and transferFrom
-    ///      continue afterward; any undistributed reserve remains permanently locked in the
-    ///      contract and total supply does not change.
+    ///      continue afterward. Any token balance held by the token contract remains locked
+    ///      after finalization, and total supply does not change.
     function finalizeDistribution() external {
         if (msg.sender != distributor) {
             revert UnauthorizedCaller(msg.sender);

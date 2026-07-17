@@ -60,7 +60,7 @@ Ordinary contract recipients are unaffected: tests distribute successfully to a 
 | Deploy script (`test/script/`) | 8 tests | passed |
 | Gas (`test/gas/`) | 15 tests | passed |
 | Forge total | 122 tests | passed |
-| TypeScript (`ops/`) | 58 tests across 4 files | passed |
+| TypeScript (`ops/`) | 90 tests across 5 files | passed |
 
 The invariant handler drives distribution, transfers, approvals, `transferFrom`, and finalization over a fixed 8-actor pool at cap 20, with zero reverts and zero discards. Transfers and approved `transferFrom` operations may target `address(token)`, modelling holders returning MREP2 to the contract — permitted ERC-20 behavior the previous handler could not reach. Returned tokens are tracked in an independent ghost value, and the invariants reconcile:
 
@@ -79,23 +79,27 @@ Approximate durations (local):
 
 | Target | Duration |
 | --- | ---: |
-| `make test` (ordinary, 107 tests) | ~1.6s |
-| `make gas` | ~0.3s |
-| `make check` | ~14.6s |
-| `make coverage` | ~2.4s |
-| `make check-deep` | ~2.9s |
+| `make test` (ordinary, 107 tests) | ~2.7s |
+| `make gas` | ~2.2s |
+| `make check` | ~10.8s |
+| `make coverage` | ~5.9s |
+| `make check-deep` | ~6.6s |
 
 `make check` remains the fast default gate and carries no gas, coverage, or deep profile. `make check-deep` runs the deep profile once (fuzz 256 runs; invariant 32 runs x 128 depth = 4,096 calls each), and all nine invariants pass there with zero reverts.
 
 ## Offline recipient tooling
 
-The Bun/TypeScript suite (58 tests) covers three offline modules. Everything is pure and deterministic: no test or module opens a network connection, signs, or reads a key.
+The Bun/TypeScript suite (90 tests) covers four offline modules. Everything is pure and deterministic: no test or module opens a network connection, signs, or reads a key.
 
 `ops/src/manifest.ts` (schema version 2) derives `recipientCap` from the final normalized unique recipient list — the build API accepts no cap, so discretionary headroom is unreachable rather than merely discouraged. Tests prove: an empty recipient list fails; 250 unique recipients produce `recipientCap == 250` and `maximumSupply == 250 * TOKEN_PER_RECIPIENT`; the final batch ends with zero remaining initial allocation across several batch sizes; a smuggled runtime `recipientCap` is ignored; duplicates are rejected rather than inflating the cap; and inputs are not mutated. Provenance is mandatory and validated (positive chain ID, canonical positive block number, 32-byte block hash, at least one valid non-zero non-duplicate source contract, well-formed SHA-256 checksums, non-empty ruleset ID) but never invented — tests use explicit fixtures that are not proposed REP values.
 
-`ops/src/distribution-plan.ts` binds an approved manifest to a deployed candidate offline. Tests prove: deterministic output; calldata that decodes back to the exact recipient array; rejection of the zero and malformed token addresses; rejection when the deployed token address appears anywhere in the recipient list (checked case-insensitively against a real mid-list recipient); rejection of a chain mismatch against the manifest snapshot; manifest-checksum propagation; correct cumulative recipient and remaining-allocation accounting; absence of any nonce, fee, gas, value, or signature field; and no mutation of the input manifest.
+The same module exports `validateManifest(raw: unknown): Manifest`, which independently re-verifies a manifest loaded from a file rather than trusting its TypeScript type or any checksum it already carries. It re-checks the schema version, provenance, `tokenPerRecipient`, batch sequencing and size, address validity/nonzero-ness/global uniqueness/canonical sort, per-batch counts and first/last addresses, `expectedRemainingInitialAllocationAfter`, and recomputes every batch checksum, the canonical recipients checksum, and the manifest checksum from the recipient data rather than reading them off the file. Tests prove it accepts a valid serialized manifest and rejects: an unsupported schema version; invalid provenance; a `tokenPerRecipient` other than `1e18`; a `recipientCap` or `maximumSupply` inconsistent with the recipient data; non-sequential batch numbers; a manifest with no batches or a batch exceeding the 200-recipient ceiling; duplicate, unsorted, zero-address, malformed, or non-canonically-cased recipients; an incorrect cumulative or remaining-allocation figure; and a modified batch checksum, canonical recipients checksum, or manifest checksum. `buildDistributionPlan` calls `validateManifest` before using a manifest, so a hand-edited or corrupted file cannot reach calldata generation undetected; a test confirms it rejects a manifest that still satisfies the `Manifest` type but was tampered with after being built.
+
+`ops/src/distribution-plan.ts` binds an approved, independently re-validated manifest to a deployed candidate offline. Tests prove: deterministic output; calldata that decodes back to the exact recipient array; rejection of the zero and malformed token addresses; rejection when the deployed token address appears anywhere in the recipient list (checked case-insensitively against a real mid-list recipient); rejection of a chain mismatch against the manifest snapshot; manifest-checksum propagation; correct cumulative recipient and remaining-allocation accounting; absence of any nonce, fee, gas, value, or signature field; no mutation of the input manifest; and rejection of a manifest tampered with after being built.
 
 `ops/src/cli.ts` (`bun run manifest`) builds a manifest from explicit JSON files and writes JSON and CSV. Tests prove it refuses to overwrite existing output without `--force` and leaves the original file untouched when it refuses, fails on an empty recipient list, fails on missing provenance rather than defaulting it, and reports missing files and usage errors.
+
+`ops/src/plan-cli.ts` (`bun run plan`) reads a manifest file, independently validates it with `validateManifest`, binds it to a deployed candidate with `buildDistributionPlan`, and writes the resulting distribution plan as JSON, printing the plan checksum, manifest checksum, recipient count, batch count, chain, and token address. It performs no network request, signing, or broadcast, and reads no key or secret. Tests prove it produces deterministic output across repeated runs; refuses to overwrite existing output without `--force` and leaves the original file untouched when it refuses; rejects a manifest with a tampered checksum, an unsupported schema version, a missing manifest file, an invalid chain ID, or a malformed token address; and reports missing required options and `--help` correctly.
 
 ## Production coverage
 
@@ -206,6 +210,8 @@ Events: standard `Transfer` and `Approval`, plus `DistributionFinalized(address,
 
 Against the previous revision, the only ABI changes are the two added project-specific custom errors, `TokenContractDistributor()` and `TokenContractRecipient(uint256)`. No function was added, removed, or changed; method identifiers are unchanged; the storage layout is unchanged; and the events are unchanged.
 
+This revision also corrects the `finalizeDistribution` NatSpec, which described the locked balance as an "undistributed reserve"; it now says precisely that any token balance held by the token contract remains locked after finalization, matching the same balance-based accounting already used in the `DistributionFinalized` event NatSpec above. This is a comment-only change: `forge inspect` `methodIdentifiers`, `storageLayout`, and `abi` are byte-for-byte identical before and after, and every gas figure in this document is unchanged.
+
 Slither (`slither .`, filtered to project source) analyzed the compiled contract set with 101 detectors and reported **0 results**; no finding was suppressed. This is not an audit.
 
 ## Validation commands
@@ -228,6 +234,7 @@ forge inspect MigrateRepV2Token errors
 - Gas figures are local measurements, not target-chain observations. No deployment figure here is a live-chain estimate: the full-transaction figure is a documented local approximation, and deployment preparation must obtain a real estimate and reconfirm execution, calldata, and transaction-tool behavior against approved chain conditions.
 - Recipient eligibility policy remains an unresolved human gate: source chains and contracts, snapshot block and hash, migrated-address treatment, dust threshold, treatment of exchanges, custodians, bridges, escrow, wrappers, liquidity and protocol contracts, smart wallets, burn addresses, and project-controlled contracts, deduplication across sources, manual-review requirements, and final inclusion/exclusion approval are all unapproved. The numeric `recipientCap` and the production distributor follow from that policy and are likewise unapproved.
 - Manifest provenance is validated, never verified: the tooling checks that a chain ID, snapshot block, block hash, source contracts, and ruleset checksums are present and well-formed. It cannot confirm they describe a real snapshot; only the human who produced them can.
+- `validateManifest` recomputes every checksum from the manifest's own recipient data and rejects a mismatch, so accidental corruption, a manual edit, or a stale checksum is caught before a manifest is used. This is not a substitute for a signature or MAC: the hashing is public and unkeyed, so it cannot detect a fully adaptive tamperer who edits the data and also recomputes matching checksums by hand. A manifest's authenticity still rests on the separately authorized human approval process, not on this tooling alone.
 - The invariant campaign reconciles a fixed 8-actor pool plus the token contract at cap 20. It is evidence about that model, not a proof over all reachable states.
 - No fork, RPC, wallet, deployment, source-verification, or live-chain rehearsal was performed.
 - Automatic wallet display and third-party reputation labels are not guaranteed.

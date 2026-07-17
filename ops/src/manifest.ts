@@ -340,6 +340,265 @@ export function buildManifest(
   };
 }
 
+const rawBatchSchema = z.object({
+  batchNumber: z.number().int().positive(),
+  recipientCount: z.number().int().positive(),
+  firstAddress: z.string(),
+  lastAddress: z.string(),
+  batchChecksum: z
+    .string()
+    .regex(
+      SHA256_CHECKSUM,
+      "batchChecksum must look like sha256:<64 lowercase hex>",
+    ),
+  cumulativeRecipients: z.number().int().positive(),
+  expectedRemainingInitialAllocationAfter: z
+    .string()
+    .regex(
+      DECIMAL_INTEGER,
+      "expectedRemainingInitialAllocationAfter must be a base-10 integer string",
+    ),
+  recipients: z
+    .array(z.string())
+    .min(1, "a batch must contain at least one recipient")
+    .max(
+      MAX_BATCH_SIZE,
+      `a batch must contain at most ${MAX_BATCH_SIZE} recipients`,
+    ),
+});
+
+const rawManifestSchema = z.object({
+  schemaVersion: z.number(),
+  provenance: z.unknown(),
+  tokenPerRecipient: z.string(),
+  recipientCap: z
+    .string()
+    .regex(DECIMAL_INTEGER, "recipientCap must be a base-10 integer string"),
+  operationalBatchSize: z.number().int().min(1).max(MAX_BATCH_SIZE),
+  maximumSupply: z
+    .string()
+    .regex(DECIMAL_INTEGER, "maximumSupply must be a base-10 integer string"),
+  canonicalSortRule: z.string(),
+  canonicalRecipientsChecksum: z
+    .string()
+    .regex(
+      SHA256_CHECKSUM,
+      "canonicalRecipientsChecksum must look like sha256:<64 lowercase hex>",
+    ),
+  manifestChecksum: z
+    .string()
+    .regex(
+      SHA256_CHECKSUM,
+      "manifestChecksum must look like sha256:<64 lowercase hex>",
+    ),
+  batches: z
+    .array(rawBatchSchema)
+    .min(1, "a manifest must contain at least one batch"),
+});
+
+/**
+ * Independently verify a manifest loaded from untrusted storage (a JSON file on disk) and return
+ * it in normalized form. Nothing in `raw` is trusted on the strength of its TypeScript type or of
+ * a checksum it already carries: every checksum, count, and cross-field relationship is
+ * recomputed from the recipient data and compared against the claimed value. A manifest that
+ * merely satisfies the `Manifest` interface at the type level has not been checked at all.
+ *
+ * `buildDistributionPlan` calls this before using a manifest so a hand-edited or corrupted file
+ * cannot silently reach calldata generation.
+ */
+export function validateManifest(raw: unknown): Manifest {
+  const parsed = rawManifestSchema.safeParse(raw);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((issue) => `${issue.path.join(".") || "manifest"}: ${issue.message}`)
+      .join("; ");
+    throw new Error(`invalid manifest: ${detail}`);
+  }
+  const value = parsed.data;
+
+  if (value.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported manifest schema version: expected ${MANIFEST_SCHEMA_VERSION}, got ${value.schemaVersion}`,
+    );
+  }
+
+  const provenance = normalizeProvenance(value.provenance);
+
+  if (value.tokenPerRecipient !== TOKEN_PER_RECIPIENT.toString(10)) {
+    throw new Error(
+      `tokenPerRecipient must equal ${TOKEN_PER_RECIPIENT.toString(10)}, got ${value.tokenPerRecipient}`,
+    );
+  }
+
+  const claimedRecipientCap = BigInt(value.recipientCap);
+  const tokenPerRecipient = BigInt(value.tokenPerRecipient);
+
+  // Tracks the lowercase form of the previous recipient across the whole manifest (not just
+  // within one batch), so a duplicate or ordering violation spanning a batch boundary is caught.
+  let previousLower: string | undefined;
+  let cumulative = 0;
+  const allRecipients: `0x${string}`[] = [];
+
+  const normalizedBatches: Batch[] = value.batches.map((batch, batchIndex) => {
+    const expectedBatchNumber = batchIndex + 1;
+    if (batch.batchNumber !== expectedBatchNumber) {
+      throw new Error(
+        `batch numbers must be sequential starting at 1: expected ${expectedBatchNumber} at position ${batchIndex}, got ${batch.batchNumber}`,
+      );
+    }
+    if (batch.recipientCount !== batch.recipients.length) {
+      throw new Error(
+        `batch ${batch.batchNumber} recipientCount ${batch.recipientCount} does not match its recipient array length ${batch.recipients.length}`,
+      );
+    }
+
+    const normalizedRecipients: `0x${string}`[] = batch.recipients.map(
+      (entry, index) => {
+        if (!isAddress(entry)) {
+          throw new Error(
+            `batch ${batch.batchNumber} recipient at position ${index} is not a valid Ethereum address: ${entry}`,
+          );
+        }
+        const canonical = getAddress(entry);
+        if (canonical !== entry) {
+          throw new Error(
+            `batch ${batch.batchNumber} recipient at position ${index} is not in canonical EIP-55 checksummed form: ${entry}`,
+          );
+        }
+        const lower = canonical.toLowerCase();
+        if (lower === ZERO_ADDRESS) {
+          throw new Error(
+            `batch ${batch.batchNumber} recipient at position ${index} is the zero address`,
+          );
+        }
+        if (previousLower !== undefined) {
+          if (lower === previousLower) {
+            throw new Error(
+              `duplicate recipient address across the manifest: ${canonical}`,
+            );
+          }
+          if (lower < previousLower) {
+            throw new Error(
+              `recipients are not canonically sorted: ${canonical} appears after a lexicographically greater address`,
+            );
+          }
+        }
+        previousLower = lower;
+        return canonical;
+      },
+    );
+
+    // biome-ignore lint/style/noNonNullAssertion: recipients is non-empty per rawBatchSchema.
+    const first = normalizedRecipients[0]!;
+    // biome-ignore lint/style/noNonNullAssertion: recipients is non-empty per rawBatchSchema.
+    const last = normalizedRecipients[normalizedRecipients.length - 1]!;
+    if (batch.firstAddress !== first) {
+      throw new Error(
+        `batch ${batch.batchNumber} firstAddress ${batch.firstAddress} does not match the actual first recipient ${first}`,
+      );
+    }
+    if (batch.lastAddress !== last) {
+      throw new Error(
+        `batch ${batch.batchNumber} lastAddress ${batch.lastAddress} does not match the actual last recipient ${last}`,
+      );
+    }
+
+    cumulative += normalizedRecipients.length;
+    if (batch.cumulativeRecipients !== cumulative) {
+      throw new Error(
+        `batch ${batch.batchNumber} cumulativeRecipients ${batch.cumulativeRecipients} does not match the recomputed running total ${cumulative}`,
+      );
+    }
+
+    const expectedRemaining =
+      (claimedRecipientCap - BigInt(cumulative)) * tokenPerRecipient;
+    if (
+      batch.expectedRemainingInitialAllocationAfter !==
+      expectedRemaining.toString(10)
+    ) {
+      throw new Error(
+        `batch ${batch.batchNumber} expectedRemainingInitialAllocationAfter ${batch.expectedRemainingInitialAllocationAfter} does not match the recomputed value ${expectedRemaining.toString(10)}`,
+      );
+    }
+
+    const recomputedBatchChecksum = sha256(
+      JSON.stringify({
+        batchNumber: batch.batchNumber,
+        recipients: normalizedRecipients,
+      }),
+    );
+    if (batch.batchChecksum !== recomputedBatchChecksum) {
+      throw new Error(
+        `batch ${batch.batchNumber} checksum does not match its recomputed recipient data`,
+      );
+    }
+
+    allRecipients.push(...normalizedRecipients);
+
+    return {
+      batchNumber: batch.batchNumber,
+      recipientCount: batch.recipientCount,
+      firstAddress: first,
+      lastAddress: last,
+      batchChecksum: batch.batchChecksum,
+      cumulativeRecipients: batch.cumulativeRecipients,
+      expectedRemainingInitialAllocationAfter:
+        batch.expectedRemainingInitialAllocationAfter,
+      recipients: normalizedRecipients,
+    };
+  });
+
+  if (claimedRecipientCap !== BigInt(allRecipients.length)) {
+    throw new Error(
+      `recipientCap ${value.recipientCap} does not equal the total unique recipient count ${allRecipients.length}`,
+    );
+  }
+
+  const expectedMaximumSupply = claimedRecipientCap * tokenPerRecipient;
+  if (BigInt(value.maximumSupply) !== expectedMaximumSupply) {
+    throw new Error(
+      `maximumSupply ${value.maximumSupply} does not equal recipientCap * tokenPerRecipient (${expectedMaximumSupply.toString(10)})`,
+    );
+  }
+
+  const recomputedCanonicalRecipientsChecksum = sha256(
+    JSON.stringify(allRecipients),
+  );
+  if (
+    value.canonicalRecipientsChecksum !== recomputedCanonicalRecipientsChecksum
+  ) {
+    throw new Error(
+      "canonicalRecipientsChecksum does not match the recomputed recipient data",
+    );
+  }
+
+  const withoutManifestChecksum: Omit<Manifest, "manifestChecksum"> = {
+    schemaVersion: value.schemaVersion,
+    provenance,
+    tokenPerRecipient: value.tokenPerRecipient,
+    recipientCap: value.recipientCap,
+    operationalBatchSize: value.operationalBatchSize,
+    maximumSupply: value.maximumSupply,
+    canonicalSortRule: value.canonicalSortRule,
+    canonicalRecipientsChecksum: value.canonicalRecipientsChecksum,
+    batches: normalizedBatches,
+  };
+
+  const recomputedManifestChecksum = sha256(
+    JSON.stringify(withoutManifestChecksum),
+  );
+  if (value.manifestChecksum !== recomputedManifestChecksum) {
+    throw new Error(
+      "manifestChecksum does not match the recomputed manifest data",
+    );
+  }
+
+  return {
+    ...withoutManifestChecksum,
+    manifestChecksum: value.manifestChecksum,
+  };
+}
+
 /** Deterministic pretty JSON serialization. */
 export function manifestToJson(manifest: Manifest): string {
   return `${JSON.stringify(manifest, null, 2)}\n`;

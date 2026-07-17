@@ -22,7 +22,7 @@ import {
   isAddress,
 } from "viem";
 
-import type { Manifest } from "./manifest.ts";
+import { type Manifest, validateManifest } from "./manifest.ts";
 
 /** Distribution-plan schema version. */
 export const PLAN_SCHEMA_VERSION = 1;
@@ -113,17 +113,18 @@ function sha256(data: string): string {
  * Bind an approved manifest to a deployed candidate. Pure and deterministic: no I/O, no network,
  * no signing, no mutation of the input manifest, and identical inputs always produce an identical
  * plan including every checksum.
+ *
+ * The manifest is independently re-validated with `validateManifest` before anything else runs:
+ * satisfying the `Manifest` type is not evidence that a manifest is genuine, so a manifest read
+ * from disk (or otherwise constructed outside `buildManifest`) is never trusted on the strength
+ * of its checksums or its TypeScript type alone.
  */
 export function buildDistributionPlan(
   input: DistributionPlanInput,
 ): DistributionPlan {
-  const {
-    manifest,
-    chainId,
-    deployedToken,
-    candidateSourceCommit,
-    runtimeBytecodeHash,
-  } = input;
+  const { chainId, deployedToken, candidateSourceCommit, runtimeBytecodeHash } =
+    input;
+  const manifest = validateManifest(input.manifest);
 
   if (!Number.isInteger(chainId) || chainId <= 0) {
     throw new Error(`chainId must be a positive integer, got ${chainId}`);
