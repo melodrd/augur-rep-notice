@@ -14,3 +14,28 @@ via_ir = false
 
 verbosity = 2
 fs_permissions = []
+
+# Do not lint on build: build-time linting also scans test code, which legitimately makes
+# calls that revert or whose return value is asserted separately. Production Solidity is
+# linted explicitly via `forge lint src script` (see the Makefile and CI).
+[profile.default.lint]
+lint_on_build = false
+
+# Focused default fuzzing: fast enough to run repeatedly in CI and locally.
+[fuzz]
+runs = 128
+
+# Compact stateful invariant campaign: ~16 x 64 = 1,024 handler calls.
+[invariant]
+runs = 16
+depth = 64
+fail_on_revert = true
+
+# Deeper profile for release review only; never used in ordinary CI.
+[profile.deep.fuzz]
+runs = 256
+
+[profile.deep.invariant]
+runs = 32
+depth = 128
+fail_on_revert = true

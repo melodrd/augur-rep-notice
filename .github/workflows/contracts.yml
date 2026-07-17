@@ -65,14 +65,17 @@ jobs:
         working-directory: ops
         run: bun test
 
-      - name: Build Solidity
-        run: forge build
+      - name: Lint production Solidity
+        run: forge lint src script
 
-      - name: Test Solidity
-        run: forge test
-
-      - name: Check contract sizes
+      - name: Build Solidity and check sizes
         run: forge build --sizes
+
+      - name: Test Solidity (ordinary suite, excludes the gas suite)
+        run: forge test --no-match-path 'test/gas/*'
+
+      - name: Repository consistency checks
+        run: make consistency
 
       - name: Run Slither
         run: slither .
