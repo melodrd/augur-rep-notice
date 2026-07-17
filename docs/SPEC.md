@@ -8,10 +8,6 @@ MREP2 is a **notice token**. It is not REP, REPv2, a migration claim, migration 
 
 This document is authoritative for contract behavior. Operational controls are in [OPERATIONS.md](OPERATIONS.md); current evidence is in [VALIDATION.md](VALIDATION.md).
 
-### Naming-risk disclosure
-
-The name `MIGRATE REPV2` and symbol `MREP2` could be read by users as an actual REPv2 asset or as an instruction to migrate. They are neither. Documentation and explorer metadata must state plainly that MREP2 is a notice token and not REPv2 itself, and that receiving it requires no action.
-
 ## Fixed metadata
 
 | Property | Value |
@@ -22,7 +18,7 @@ The name `MIGRATE REPV2` and symbol `MREP2` could be read by users as an actual 
 | One token | `TOKEN_PER_RECIPIENT = 1 ether = 1e18` base units |
 | Maximum supply | `recipientCap * 1e18`, fixed at construction |
 
-`decimals()` is the standard OpenZeppelin 18. The verified checksummed contract address published through official Augur sources is the canonical identity; matching metadata, source, ABI, price, or branding is not proof of authenticity.
+`decimals()` is the standard OpenZeppelin 18. A specific deployment is identified by its verified, checksummed contract address and that address's on-chain source verification; matching metadata, source, ABI, price, or branding is not proof of authenticity.
 
 ## Architecture
 
@@ -102,7 +98,7 @@ Any failure reverts the complete call, including earlier mapping writes, balance
 
 ### The token contract is never a recipient
 
-Distributing to `address(this)` would call `_transfer(address(this), address(this), TOKEN_PER_RECIPIENT)`. That self-transfer leaves the contract's balance unchanged while still consuming one unit of `recipientCap` and permanently recording the token contract itself as an initial recipient — an address that can never hold a token meaningfully, never transfer it, and never have been eligible. `TokenContractRecipient(index)` rejects it before any state changes, and the rejection reverts the whole batch atomically.
+Distributing to `address(this)` would consume a recipient slot without moving any balance or representing a legitimate external recipient. The self-transfer `_transfer(address(this), address(this), TOKEN_PER_RECIPIENT)` leaves the contract's balance unchanged while still consuming one unit of `recipientCap` and permanently recording the token contract as an initial recipient. `TokenContractRecipient(index)` rejects it before any state changes, and the rejection reverts the whole batch atomically.
 
 Only the token contract is rejected. Recipients are **never** filtered on bytecode presence: `recipient.code.length` is not consulted anywhere. A multisignature, custody address, or smart wallet is an ordinary recipient and may legitimately appear in a separately approved recipient list. Bytecode presence would neither identify who controls an address nor establish eligibility, so it is a policy question resolved off-chain, not an on-chain filter.
 

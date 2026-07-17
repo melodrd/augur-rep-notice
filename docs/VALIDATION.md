@@ -1,238 +1,119 @@
-# Contract Validation
+# Validation
 
-Status: current local evidence as of 2026-07-17.
+Reproducible local evidence for `MigrateRepV2Token`, current as of 2026-07-17.
 
-This document records reproducible evidence for `MigrateRepV2Token`. It is not an audit, does not prove that vulnerabilities are absent, and does not establish recipient, operational, or deployment readiness. All figures come from the checked-in configuration and the local toolchain; no RPC, wallet, key, or live chain was involved.
+This is not an audit. Passing tests, full coverage, and a clean Slither run are diagnostics about tested behavior; they do not prove that vulnerabilities are absent. All figures come from the checked-in configuration and local toolchain; no RPC, wallet, key, or live chain was involved.
 
 ## Candidate
 
 | Item | Value |
 | --- | --- |
+| Production-code commit | `3ae5d82325e1b08e991fbdccd439cb3736efca01` |
 | Contract | `src/MigrateRepV2Token.sol` |
-| Inheritance | `ERC20` (OpenZeppelin v5.6.1) only |
-| Solidity | `0.8.36` |
-| EVM target | `osaka` |
-| Optimizer | enabled, 200 runs |
-| Via IR | disabled |
-| Forge | `1.7.1` |
-| OpenZeppelin Contracts | `v5.6.1` at `5fd1781b1454fd1ef8e722282f86f9293cacf256` |
-| forge-std | `v1.16.2` at `bf647bd6046f2f7da30d0c2bf435e5c76a780c1b` |
-| Slither | `0.11.5` |
-| Bun | `1.3.14` |
+| Inheritance | OpenZeppelin `ERC20` only |
+| Solidity / EVM | `0.8.36` / `osaka` |
+| Optimizer / via-IR | enabled, 200 runs / disabled |
+| OpenZeppelin Contracts | `v5.6.1` @ `5fd1781b1454fd1ef8e722282f86f9293cacf256` |
+| forge-std | `v1.16.2` @ `bf647bd6046f2f7da30d0c2bf435e5c76a780c1b` |
+| Forge / Slither / Bun | `1.7.1` / `0.11.5` / `1.3.14` |
 
-The checked-in `foundry.toml` is the canonical build configuration. Compilation completed without Solidity diagnostics, and `forge lint src script` reported no findings.
+The **production-code commit** above is the frozen source and tooling; the ABI, bytecode, and every figure in this document derive from it. Documentation, including this validation refresh, is committed separately on top of it and changes no Solidity, `ops/` code, ABI, or bytecode — so the source commit is the correct reference for what was tested, not the later documentation commit.
 
-## Metadata and construction
+Compilation produced no Solidity diagnostics; `forge lint src script` reported no findings. The test catalogue is in [TESTS.md](TESTS.md).
 
-`name() == "MIGRATE REPV2"`, `symbol() == "MREP2"`, `decimals() == 18` (inherited, not overridden), `TOKEN_PER_RECIPIENT() == 1e18`, `MAX_BATCH_SIZE() == 200`. At construction the whole `recipientCap * 1e18` supply is minted to `address(this)`; the deployer and distributor hold zero, `totalInitialRecipients` is zero, and `distributionFinalized` is false. There is no callable function that increases `totalSupply()`.
+## Build artifacts
 
-## Construction validation order
+| Artifact | SHA-256 |
+| --- | --- |
+| Creation bytecode | `41cae5bf9379de815b39c63671df5adee92151f5ab2ccb919c1e0e9078b43c31` |
+| Runtime bytecode (immutables zeroed) | `78aa335e2c29dcf88bf1fe8d8ff2ba8ad960746b1400f744c9f19a3fa847ea39` |
 
-```text
-zero distributor -> token contract distributor -> zero recipient cap -> supply overflow
-```
+Each hash is computed over the **raw decoded bytecode bytes**, not the printed hex string: `forge inspect <artifact> | cut -c3- | xxd -r -p | sha256sum`. Hashing the hex text instead yields a different, non-comparable digest. The runtime hash is over `forge inspect deployedBytecode`, which zeroes the three immutables; on-chain runtime code differs. The creation hash is constant and independent of constructor arguments.
 
-A focused test uses `vm.computeCreateAddress` with the deployer's next nonce to prove that deploying with the predicted token address as its own distributor reverts with `TokenContractDistributor`; a companion test pins the prediction itself against a real deployment. Double-fault tests lock the token-contract check ahead of both the zero-cap and overflow checks, and the zero distributor ahead of the zero cap. EOA distributors and contract distributors (including one that then distributes successfully) both still work.
-
-## Distribution validation order
-
-```text
-authorization -> finalized -> empty -> maximum batch -> recipient cap -> recipient validation
-```
-
-Recipient validation itself is ordered:
-
-```text
-zero address -> token contract -> previously distributed
-```
-
-Focused adjacent double-fault tests lock authorization > finalized, finalized > empty, maximum batch > recipient cap, and recipient cap > recipient validation — the outer order is unchanged. Within recipient validation, tests lock zero > token contract, and token contract > already-distributed (including a batch repeating `address(token)`, where the token-contract error wins over the duplicate error). Recipient validation rejects the zero address, the token contract, and any prior initial recipient including a duplicate earlier in the same batch; every failure reverts the whole call atomically.
-
-Ordinary contract recipients are unaffected: tests distribute successfully to a second deployed contract and to the test contract. `recipient.code.length` is not consulted anywhere in the production source.
-
-## Test evidence
+## Tests
 
 | Suite | Campaign | Result |
 | --- | ---: | --- |
-| Unit (`test/MigrateRepV2Token.t.sol`) | 82 tests | passed |
-| Fuzz (`test/fuzz/`) | 8 properties x 128 runs | passed |
-| Invariant (`test/invariant/`) | 9 invariants x 16 runs x 64 depth = 1,024 calls each | passed |
-| Deploy script (`test/script/`) | 8 tests | passed |
-| Gas (`test/gas/`) | 15 tests | passed |
-| Forge total | 122 tests | passed |
-| TypeScript (`ops/`) | 70 tests across 3 files | passed |
+| Unit (`test/MigrateRepV2Token.t.sol`) | 82 tests | pass |
+| Fuzz (`test/fuzz/`) | 8 properties × 128 runs | pass |
+| Invariant (`test/invariant/`) | 9 invariants × 16 × 64 = 1,024 calls each | pass |
+| Deploy script (`test/script/`) | 8 tests | pass |
+| Gas (`test/gas/`) | 15 tests | pass |
+| TypeScript (`ops/`) | 70 tests across 3 files | pass |
 
-The invariant handler drives distribution, transfers, approvals, `transferFrom`, and finalization over a fixed 8-actor pool at cap 20, with zero reverts and zero discards. Transfers and approved `transferFrom` operations may target `address(token)`, modelling holders returning MREP2 to the contract — permitted ERC-20 behavior the previous handler could not reach. Returned tokens are tracked in an independent ghost value, and the invariants reconcile:
+The ordinary Forge run is 4 suites, 107 tests; the gas suite adds 15, for 122 Forge tests in total. The unit tests lock exact construction, metadata, and initial state; both validation precedences (constructor and per-recipient) with atomic rollback; rejection of the token contract as recipient and distributor with ordinary contracts still accepted; success at the 200-recipient maximum and rejection at 201; cap-boundary behavior; permanent binary history and duplicate prevention; unrestricted ERC-20 behavior before and after finalization; the returned-token balance model; and irreversible finalization.
+
+The invariant handler drives distribution, transfers, approvals, `transferFrom`, and finalization over a fixed 8-actor pool plus the token contract at cap 20, with zero reverts. Transfers may return tokens to `address(token)`; the invariants reconcile the returned-token model:
 
 ```text
-token contract balance = maximumSupply
-                       - totalInitialRecipients * TOKEN_PER_RECIPIENT
-                       + tokens returned to the contract
-
-actor balance sum      = totalInitialRecipients * TOKEN_PER_RECIPIENT
-                       - tokens returned to the contract
+contract balance  = maximumSupply - totalInitialRecipients * 1e18 + tokens returned
+actor balance sum = totalInitialRecipients * 1e18 - tokens returned
 ```
 
-The nine invariants cover: fixed total supply; the recipient cap; the full balance set summing to total supply; the ghost recipient count and distinct flagged actors matching `totalInitialRecipients` (so no address is initially distributed to twice); history only changing false to true; the returned-token balance model above; the remaining initial allocation never exceeding the contract balance; the token contract never becoming an initial recipient (re-attempted live at every step); and distribution always failing after finalization. The returned-token path is genuinely exercised, not vacuous: a probe asserting zero returns fails within two runs.
+The returned-token path is exercised, not vacuous: a probe asserting zero returns fails within two runs. `make check-deep` re-runs the campaign at fuzz 256 and invariant 32 × 128 = 4,096 calls each, again with zero reverts.
 
-Approximate durations (local):
+The `ops/` suite covers three offline modules and their CLI. Everything is pure and deterministic: no test opens a network connection, signs, or reads a key. It proves the cap is derived from the unique recipient count (no cap can be supplied), addresses are normalized and canonically sorted, malformed/zero/duplicate/unsorted lists are rejected, provenance shape is validated, source and target chains may differ, calldata decodes back to the exact recipients, the token address cannot appear in its own recipient list, detached checksums match the emitted bytes, and outputs never clobber without `--force`.
 
-| Target | Duration |
-| --- | ---: |
-| `make test` (ordinary, 107 tests) | ~2.7s |
-| `make gas` | ~2.2s |
-| `make check` | ~10.8s |
-| `make coverage` | ~5.9s |
-| `make check-deep` | ~6.6s |
+## Coverage
 
-`make check` remains the fast default gate and carries no gas, coverage, or deep profile. `make check-deep` runs the deep profile once (fuzz 256 runs; invariant 32 runs x 128 depth = 4,096 calls each), and all nine invariants pass there with zero reverts.
-
-## Offline recipient tooling
-
-The Bun/TypeScript suite (70 tests across 3 files) covers three offline modules and their shared CLI. Everything is pure and deterministic: no test or module opens a network connection, signs, or reads a key. The suite carries no dependency-smoke test; `viem` is the only runtime dependency, used for address and ABI handling.
-
-`ops/src/manifest.ts` (manifest format version 1) stores only authoritative inputs — provenance, batch size, and the canonical recipient list — and derives the recipient cap, maximum supply, and batch split on demand. `buildManifest` derives the cap from the final normalized unique recipient list; it accepts no cap at all, so discretionary headroom is unreachable rather than merely discouraged. Tests prove: malformed, zero-address, and case-insensitive-duplicate recipients are rejected; recipients are normalized to EIP-55 and sorted deterministically by lowercase address; an empty list is rejected; the cap and maximum supply are derived from the unique count; batch sizes outside 1..200 are rejected; output is deterministic; and inputs are not mutated. Provenance is mandatory and validated (positive source chain ID, canonical positive block number, 32-byte block hash, at least one valid non-zero non-duplicate source contract, well-formed SHA-256 checksums, non-empty ruleset ID) but never invented — tests use explicit fixtures that are not proposed REP values.
-
-The same module exports `parseManifest(raw: unknown): Manifest`, which validates a manifest loaded from a file rather than trusting its TypeScript type. It re-checks the version and provenance, the batch size, and every recipient — validity, non-zero, canonical EIP-55 form, and strictly ascending order, which rejects unsorted lists and duplicates in one pass. There is no embedded self-checksum to recompute; byte-level integrity is handled separately by the detached `manifest.json.sha256`. Tests prove it accepts a valid serialized manifest and rejects a non-object, an unsupported version, invalid provenance, an out-of-range batch size, an empty list, and malformed, zero-address, non-canonically-cased, unsorted, or duplicate recipients. `buildDistributionPlan` re-runs `parseManifest` on its input, so a hand-built or tampered manifest cannot reach calldata generation; a test confirms it rejects one that still satisfies the `Manifest` type but carries an unsorted list.
-
-`ops/src/distribution-plan.ts` (plan format version 1) binds a re-validated manifest to a deployed candidate offline. It derives batches from the manifest, encodes `distribute(address[])` for each, then decodes each payload and asserts it reproduces the batch exactly. Tests prove: deterministic output; calldata that decodes back to the exact recipient array; preservation of the canonical manifest order across batches; rejection of the zero and malformed token addresses; rejection when the deployed token address appears anywhere in the recipient list (checked case-insensitively against a real mid-list recipient); rejection of an invalid target chain, a malformed source commit, a malformed runtime-bytecode checksum, and a malformed manifest checksum; that the source and target chains may differ (a mainnet-source snapshot drives a Sepolia plan); absence of any nonce, fee, gas, key, signature, or broadcast field; and no mutation of the input manifest.
-
-`ops/src/cli.ts` is one entry point with two subcommands — `bun run ops -- manifest` and `bun run ops -- plan` — over shared helpers in `ops/src/io.ts` for reading JSON, writing outputs without clobbering, and detached SHA-256 generation. The manifest subcommand writes `manifest.json`, `manifest.csv`, and `manifest.json.sha256`; the plan subcommand reads a manifest, hashes its exact bytes, optionally verifies a supplied detached checksum, binds it with `buildDistributionPlan`, and writes `plan.json` and `plan.json.sha256`. It performs no network request, signing, or broadcast, and reads no key or secret. Tests prove: required arguments are enforced; missing files and malformed JSON are rejected; output is refused without `--force` and the original file is left untouched, while `--force` overwrites; a failed command leaves no partial output; each detached checksum matches the exact emitted bytes; a supplied manifest checksum is verified and a mismatch is rejected; the plan is deterministic across runs; and `--help` and an unknown subcommand behave correctly.
-
-## Production coverage
-
-| Metric | Production result |
+| Metric | `src/` |
 | --- | ---: |
 | Lines | 100.00% (45/45) |
 | Statements | 100.00% (44/44) |
 | Branches | 100.00% (14/14) |
 | Functions | 100.00% (3/3) |
 
-Coverage is reported for `src/` only (`--no-match-coverage '(test\|script)/'`) and excludes the gas suite. OpenZeppelin dependency code is not treated as project-owned coverage. The three counted functions are the constructor, `distribute`, and `finalizeDistribution`; inherited ERC-20 functions and auto-generated getters are OpenZeppelin's.
+Reported for `src/` only, excluding the gas suite. The three counted functions are the constructor, `distribute`, and `finalizeDistribution`; inherited ERC-20 functions and getters are OpenZeppelin's.
 
-## Size and optimizer selection
+## Static analysis
 
-| Optimizer runs | Deployment (CREATE-frame) | distribute/100 (Osaka) | transfer (Osaka) | Runtime bytes | Initcode bytes |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 736,781 | 4,830,466 | 46,795 | 3,052 | 4,360 |
-| 200 | 750,414 | 4,830,399 | 46,642 | 3,120 | 4,429 |
-| 1,000 | 819,565 | 4,830,377 | 46,620 | 3,465 | 4,774 |
+`slither .` analyzed 8 contracts with 101 detectors and reported **0 results**; nothing was suppressed. This is not an audit.
 
-Distribution — the dominant campaign cost — is essentially optimizer-insensitive (about 1 gas per recipient across the whole range) because it is dominated by cold storage writes. Runs=200 captures the transfer-path savings (153 gas per transfer versus runs=1) at a small deployment cost, while runs=1,000 adds about 69k deployment gas and 345 runtime bytes for only 22 additional gas per transfer. **Optimizer runs = 200 is selected**, unchanged by this revision. Final runtime is 3,120 bytes (21,456 below the 24,576 limit); initcode is 4,429 bytes (44,723 below the 49,152 limit).
+## ABI, storage, and gas
 
-## Batch-size selection
+The callable surface is exactly the nine standard ERC-20 functions plus `TOKEN_PER_RECIPIENT`, `MAX_BATCH_SIZE`, `distributor`, `recipientCap`, `maximumSupply`, `totalInitialRecipients`, `distributionFinalized`, `wasInitialRecipient`, `distribute`, and `finalizeDistribution`. `make consistency` confirms no `mint`, `burn`, `owner`, `pause`, `blacklist`, `permit`, `upgradeTo`, `withdraw`, `recoverToken`, or similar administrative selector.
 
-The contract performs a cold recipient-balance write plus a cold history write per recipient, so per-recipient cost is dominated by cold storage. Worst-case successful calls (all-nonzero address bytes, cold recipients) measured as Osaka transaction gas `21000 + max(calldata + execution, 10 * tokens)`:
+Events: `Transfer`, `Approval`, and `DistributionFinalized(address,uint256,uint256)` whose third field is `contractBalanceAtFinalization` — the token contract's complete balance at finalization, not a mathematically exact undistributed allocation. Errors: twelve project custom errors plus the six inherited `IERC20Errors`, none wrapped.
 
-| Recipients | Calldata gas | Execution gas | Osaka tx gas | % of 16,777,216 cap |
-| ---: | ---: | ---: | ---: | ---: |
-| 1 | 712 | 72,428 | 94,140 | 0.6% |
-| 10 | 4,024 | 499,685 | 524,709 | 3.1% |
-| 25 | 9,544 | 1,211,780 | 1,242,324 | 7.4% |
-| 50 | 18,744 | 2,398,605 | 2,438,349 | 14.5% |
-| 100 | 37,144 | 4,772,255 | 4,830,399 | 28.8% |
-| 150 | 55,544 | 7,145,905 | 7,222,449 | 43.1% |
-| **200** | **73,944** | **9,519,555** | **9,614,499** | **57.3%** |
+Storage (slots 0–4 are OpenZeppelin ERC-20): `totalInitialRecipients` (slot 5), `distributionFinalized` (slot 6), `wasInitialRecipient` (slot 7). Immutables and constants occupy no mutable storage.
 
-**`MAX_BATCH_SIZE = 200` is retained.** Its worst-case successful call is 9,614,499 gas — 57.31% of the 16,777,216 Osaka transaction gas cap, under the documented 70% target (11,744,051) with 2,129,552 gas of margin against that target and 7,162,717 below the cap itself. The new token-contract recipient check cost 8,000 Osaka gas at the 200 maximum (9,606,499 → 9,614,499, +0.08%), which does not approach the target.
+`MAX_BATCH_SIZE = 200` is measurement-derived. Worst-case successful calls (all-nonzero address bytes, cold recipients), as Osaka transaction gas `21000 + max(calldata + execution, 10 * tokens)`:
 
-The incremental cost is 47,841 Osaka gas per recipient (47,473 execution, 368 calldata), linear across the measured range: the extrapolated 50-recipient remainder used in the campaign table below (2,438,349) equals the measured value exactly. By that extrapolation the 70% target would be reached at about 245 recipients; sizes above 200 are not measurable against this contract, because 201 is rejected. Operations should normally use batches of about 100 and no more than 150; 200 is the hard ceiling, not the recommended size.
+| Recipients | Osaka tx gas | % of 16,777,216 cap |
+| ---: | ---: | ---: |
+| 100 | 4,830,399 | 28.8% |
+| 150 | 7,222,449 | 43.1% |
+| **200** | **9,614,499** | **57.3%** |
 
-## Deployment gas
+The 200-recipient worst case is 57.3% of the Osaka transaction cap, under the 70% target with margin; incremental cost is ~47,841 gas per recipient. Optimizer runs = 200 captures the transfer-path savings at a small deployment cost. Full gas figures are produced by `make gas`; runtime is 3,120 bytes (well under the 24,576 limit).
 
-Deployment is reported as three separate figures. The CREATE-frame measurement is not the full deployment-transaction gas, and none of these is a live-chain estimate — no RPC was consulted.
+## Known limitations
 
-| Component | Gas | Source |
-| --- | ---: | --- |
-| Constructor / CREATE-frame | 750,414 | measured (initcode execution plus code deposit, as charged inside the CREATE opcode, which includes the 32,000 create cost) |
-| Creation transaction intrinsic base | 21,000 | computed (the transaction base a CREATE frame never pays) |
-| Initcode calldata gas | 67,856 | computed from the 4,493-byte initcode (4/zero byte, 16/nonzero byte) |
-| **Full deployment transaction** | **839,270** | **local approximation only** |
+- **No audit or independent human release review has occurred.** The candidate is not approved for mainnet until an independent reviewer has inspected the final source, the OpenZeppelin pin, the supply and distribution model, ABI, storage layout, constructor arguments, and the final manifest and provenance.
+- **No live-chain rehearsal exists for this exact frozen candidate and lean v1 workflow.** No fork, RPC, wallet, deployment, or Sepolia rehearsal was performed against the `3ae5d82` build and the current manifest/plan tooling. Every gas figure here is local, not a target-chain observation.
+- **Recipient policy remains a human gate.** Source chains and contracts, snapshot block and hash, migrated-address treatment, dust threshold, exchange/custodian/bridge/contract/burn-address treatment, deduplication, manual review, and final inclusion are unresolved. The numeric `recipientCap` and production distributor follow from that policy and are likewise unresolved.
+- **Provenance is validated, never verified**: the tooling checks shape, not that the values describe a real snapshot.
+- **Integrity is structural plus a detached hash, not a signature.** `parseManifest` rejects malformed, zero, non-canonical, unsorted, or duplicate recipients, and the detached checksums detect accidental edits; both are public and unkeyed and cannot detect an adaptive tamperer who regenerates a matching hash. Authenticity rests on the separately authorized human approval process.
+- **The invariant campaign reconciles a fixed 8-actor pool plus the token contract at cap 20.** It is evidence about that model, not a proof over all reachable states.
+- Automatic wallet display and third-party labels are not guaranteed.
 
-The approximation applies the same Osaka floor formula to the measured CREATE frame and the initcode calldata. It uses the CREATE frame as a proxy for creation-transaction execution, which slightly overstates it because the frame also pays caller-side memory expansion. A real deployment estimate requires an RPC and is out of scope here; deployment preparation must obtain one under a separately authorized task.
-
-## Gas figures with illustrative USDC
-
-**All USDC figures below are illustrative**, not live prices: they assume ETH = $2,000 and show 0.1 / 1 / 3 gwei, with `USDC = gas * gwei * 1e-9 * 2000`.
-
-| Scenario | Osaka tx gas | @0.1 gwei | @1 gwei | @3 gwei |
-| --- | ---: | ---: | ---: | ---: |
-| Deployment (CREATE-frame only, not a full tx) | 750,414 | $0.150 | $1.501 | $4.502 |
-| Deployment (full tx, local approximation) | 839,270 | $0.168 | $1.679 | $5.036 |
-| distribute 1 | 94,140 | $0.019 | $0.188 | $0.565 |
-| distribute 100 | 4,830,399 | $0.966 | $9.661 | $28.982 |
-| distribute 150 | 7,222,449 | $1.444 | $14.445 | $43.335 |
-| distribute 200 (max) | 9,614,499 | $1.923 | $19.229 | $57.687 |
-| transfer (cold recipient) | 46,642 | $0.009 | $0.093 | $0.280 |
-| transfer (zero value) | 28,670 | $0.006 | $0.057 | $0.172 |
-| approve | 46,195 | $0.009 | $0.092 | $0.277 |
-| transferFrom (finite allowance) | 47,593 | $0.010 | $0.095 | $0.286 |
-| transferFrom (max allowance) | 47,156 | $0.009 | $0.094 | $0.283 |
-| finalizeDistribution | 47,575 | $0.010 | $0.095 | $0.286 |
-| unauthorized distribution (revert) | 22,780 | $0.005 | $0.046 | $0.137 |
-| empty batch (revert) | 24,042 | $0.005 | $0.048 | $0.144 |
-| 201 oversized (revert) | 206,780 | $0.041 | $0.414 | $1.241 |
-| cap overflow, 101 vs cap 100 (revert) | 114,780 | $0.023 | $0.230 | $0.689 |
-| duplicate at final index of 200 (revert) | 9,547,609 | $1.910 | $19.095 | $57.286 |
-| token contract at final index of 200 (revert) | 9,547,382 | $1.909 | $19.095 | $57.284 |
-| zero at final index of 200 (revert) | 9,547,102 | $1.909 | $19.094 | $57.283 |
-
-The Osaka calldata floor dominates the oversized and cap-overflow rejections, which revert before iterating. The three late rejections cost almost as much as a full successful batch because they revert only at the final recipient, and they sit within 507 gas of each other — the token-contract check is the same cost class as the zero and duplicate checks it sits between.
-
-Incremental cost per recipient: 47,841 Osaka gas ($0.0096 at 0.1 gwei, $0.096 at 1 gwei, $0.287 at 3 gwei).
-
-Campaign totals, **distribution only — deployment is excluded** because no live deployment estimate exists (operational batch size 100):
-
-| Recipients | Batches | Osaka gas | @0.1 gwei | @1 gwei | @3 gwei |
-| ---: | --- | ---: | ---: | ---: | ---: |
-| 100 | 1x100 | 4,830,399 | $0.97 | $9.66 | $28.98 |
-| 250 | 100+100+50 | 12,099,147 | $2.42 | $24.20 | $72.59 |
-| 500 | 5x100 | 24,151,995 | $4.83 | $48.30 | $144.91 |
-| 1,000 | 10x100 | 48,303,990 | $9.66 | $96.61 | $289.82 |
-
-Add deployment separately using the deployment table above, remembering that its full-transaction figure is a local approximation and not a live-chain estimate.
-
-## Gas method
-
-`test/gas/MigrateRepV2TokenGas.t.sol` measures optimized calls in isolation with fresh contracts and cold state. Execution gas is the call-frame gas from `vm.lastCallGas().gasTotalUsed`; calldata gas is computed from the encoded calldata (4 per zero byte, 16 per nonzero byte); the Osaka transaction gas applies the floor formula above. Successful distribution recipients are generated with every address byte forced nonzero for the worst case, and the generator explicitly excludes `address(0)`, the token under measurement, and duplicates rather than relying on hash collisions being unlikely.
-
-Deployment is reported as separate components (see above), never as one number: the CREATE-frame figure is measured, the intrinsic and initcode calldata gas are computed, and only their combination is presented — labelled as a local approximation. `forge test --gas-report` remains diagnostic only. Reproduce with `make gas`.
-
-## ABI, storage, and diagnostics
-
-The callable surface is exactly the nine standard ERC-20 functions plus `TOKEN_PER_RECIPIENT`, `MAX_BATCH_SIZE`, `distributor`, `recipientCap`, `maximumSupply`, `totalInitialRecipients`, `distributionFinalized`, `wasInitialRecipient`, `distribute`, and `finalizeDistribution`. `make consistency` and manual inspection confirm no `mint`, `burn`, `owner`, `transferOwnership`, `grantRole`, `pause`, `blacklist`, `setFee`, `enableTrading`, `permit`, `delegate`, `claim`, `redeem`, `upgradeTo`, `withdraw`, `recoverToken`, `transferAndCall`, or `approveAndCall` selector.
-
-Storage (slots 0-4 are OpenZeppelin ERC-20): `totalInitialRecipients` (slot 5), `distributionFinalized` (slot 6), `wasInitialRecipient` (slot 7). Immutables (`distributor`, `recipientCap`, `maximumSupply`) and constants occupy no mutable storage.
-
-Events: standard `Transfer` and `Approval`, plus `DistributionFinalized(address,uint256,uint256)` whose third field is `contractBalanceAtFinalization` — the token contract's complete balance at finalization, not a mathematically exact undistributed allocation; parameter types, indexed fields, and the event topic are unchanged. Errors: twelve project custom errors plus the six inherited `IERC20Errors`, none wrapped or duplicated.
-
-Against the previous revision, the only ABI changes are the two added project-specific custom errors, `TokenContractDistributor()` and `TokenContractRecipient(uint256)`. No function was added, removed, or changed; method identifiers are unchanged; the storage layout is unchanged; and the events are unchanged.
-
-This revision also corrects the `finalizeDistribution` NatSpec, which described the locked balance as an "undistributed reserve"; it now says precisely that any token balance held by the token contract remains locked after finalization, matching the same balance-based accounting already used in the `DistributionFinalized` event NatSpec above. This is a comment-only change: `forge inspect` `methodIdentifiers`, `storageLayout`, and `abi` are byte-for-byte identical before and after, and every gas figure in this document is unchanged.
-
-Slither (`slither .`, filtered to project source) analyzed the compiled contract set with 101 detectors and reported **0 results**; no finding was suppressed. This is not an audit.
-
-## Validation commands
+## Reproduce
 
 ```bash
-make check         # fmt-check, lint, build+sizes, ordinary tests, ops-check, Slither, consistency
-make coverage      # production coverage, excludes the gas suite
-make gas           # isolated gas measurements
-make check-deep    # deep fuzz/invariant profile, once
+git submodule update --init --recursive
+cd ops && bun install --frozen-lockfile && bun run check && cd ..
+make check          # fmt-check, lint, build+sizes, ordinary tests, ops-check, Slither, consistency
+make check-deep     # deep fuzz/invariant profile, once
+make coverage       # production coverage
+make gas            # isolated gas measurements
+
+# Artifact hashes, over raw decoded bytes (not the printed hex string):
+forge inspect MigrateRepV2Token bytecode         | cut -c3- | xxd -r -p | sha256sum
+forge inspect MigrateRepV2Token deployedBytecode | cut -c3- | xxd -r -p | sha256sum
+
 forge inspect MigrateRepV2Token abi
 forge inspect MigrateRepV2Token methodIdentifiers
 forge inspect MigrateRepV2Token storageLayout
 forge inspect MigrateRepV2Token events
 forge inspect MigrateRepV2Token errors
 ```
-
-## Known limitations
-
-- No formal audit or independent human release review has occurred. Passing tests and a clean Slither run are not an audit and do not prove that vulnerabilities are absent. The candidate is not approved for mainnet until an independent Solidity reviewer has inspected the final production source, the OpenZeppelin pin, the fixed-supply model, distributor authority, recipient-cap accounting, self-recipient and self-distributor rejection, returned-token accounting, finalization, the ABI, the storage layout, the deployment constructor arguments, and the final recipient manifest and provenance. No such review evidence exists.
-- Gas figures are local measurements, not target-chain observations. No deployment figure here is a live-chain estimate: the full-transaction figure is a documented local approximation, and deployment preparation must obtain a real estimate and reconfirm execution, calldata, and transaction-tool behavior against approved chain conditions.
-- Recipient eligibility policy remains an unresolved human gate: source chains and contracts, snapshot block and hash, migrated-address treatment, dust threshold, treatment of exchanges, custodians, bridges, escrow, wrappers, liquidity and protocol contracts, smart wallets, burn addresses, and project-controlled contracts, deduplication across sources, manual-review requirements, and final inclusion/exclusion approval are all unapproved. The numeric `recipientCap` and the production distributor follow from that policy and are likewise unapproved.
-- Manifest provenance is validated, never verified: the tooling checks that a source chain ID, snapshot block, block hash, source contracts, and ruleset checksums are present and well-formed. It cannot confirm they describe a real snapshot; only the human who produced them can.
-- Integrity checking is structural plus a detached hash, not a signature or MAC. `parseManifest` rejects a manifest whose recipients are malformed, zero, non-canonical, unsorted, or duplicated, and the detached `manifest.json.sha256` (and `plan.json.sha256`) detects an accidental edit, truncation, or stale copy of the exact emitted bytes. Both are public and unkeyed, so they cannot detect a fully adaptive tamperer who edits the data and regenerates a matching hash. A manifest's authenticity still rests on the separately authorized human approval process, not on this tooling alone.
-- The invariant campaign reconciles a fixed 8-actor pool plus the token contract at cap 20. It is evidence about that model, not a proof over all reachable states.
-- No fork, RPC, wallet, deployment, source-verification, or live-chain rehearsal was performed.
-- Automatic wallet display and third-party reputation labels are not guaranteed.

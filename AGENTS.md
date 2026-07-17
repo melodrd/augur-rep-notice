@@ -8,7 +8,7 @@ Treat contract changes, recipient transformations, deployment preparation, and t
 
 ## Source of authority
 
-When instructions conflict, follow, in order: explicit human instructions for the current task; [docs/SPEC.md](docs/SPEC.md); [docs/OPERATIONS.md](docs/OPERATIONS.md); [docs/VALIDATION.md](docs/VALIDATION.md); this file; then existing tests and code comments. Stop before changing code when a request conflicts with a security invariant or approved behavior.
+When instructions conflict, follow, in order: explicit human instructions for the current task; [docs/SPEC.md](docs/SPEC.md); [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md); [docs/OPERATIONS.md](docs/OPERATIONS.md); [docs/VALIDATION.md](docs/VALIDATION.md); [docs/COMMUNICATIONS.md](docs/COMMUNICATIONS.md); this file; then existing tests and code comments. Stop before changing code when a request conflicts with a security invariant or approved behavior.
 
 ## Design principles
 
