@@ -12,10 +12,13 @@ The token behaves like an ordinary ERC-20 at all times: unrestricted `transfer`,
 
 - **18 decimals.** One token equals `1e18` base units (`TOKEN_PER_RECIPIENT = 1 ether`).
 - **Fixed supply.** The entire `recipientCap * 1e18` supply is minted once in the constructor and held by the token contract itself; there is no mint function afterward.
-- **Reserve held by the contract.** The reserve leaves `address(this)` only through the distributor-only `distribute`. Any reserve left after finalization is permanently locked — never burned or swept.
-- **Distributor-only distribution.** An immutable `distributor` sends exactly one token to each selected address, in atomic batches of at most `MAX_BATCH_SIZE = 200`.
-- **Permanent history.** `wasInitialRecipient(address)` records that an address received a token directly from the reserve. It never clears and is not a balance, current-holder, or eligibility claim.
+- **Allocation held by the contract.** The initial allocation leaves `address(this)` only through the distributor-only `distribute`. Anything left after finalization is permanently locked — never burned or swept.
+- **Distributor-only distribution.** An immutable `distributor` sends exactly one token to each selected address, in atomic batches of at most `MAX_BATCH_SIZE = 200`. The distributor may be neither the zero address nor the token contract itself.
+- **The token contract is not a recipient.** `distribute` rejects `address(this)`, which would otherwise self-transfer, consume cap, and record the contract as an initial recipient. Ordinary contract recipients — multisignatures, custody addresses, smart wallets — are fully supported; there is no bytecode filter.
+- **Permanent history.** `wasInitialRecipient(address)` records that an address received a token directly from the contract. It never clears and is not a balance, current-holder, or eligibility claim.
 - **Irreversible finalization.** `finalizeDistribution` permanently closes distribution; standard transfers, approvals, and `transferFrom` continue unchanged.
+
+Because MREP2 is freely transferable, holders may send tokens back to `address(token)`. The token contract's live balance is therefore the **remaining initial allocation** `(recipientCap - totalInitialRecipients) * 1e18` **plus any returned tokens** — the two are distinct quantities and only the former is predictable off-chain. No path recovers returned tokens.
 
 ## Fixed metadata
 
@@ -58,13 +61,17 @@ Distribution flow: deploy (whole supply minted to the contract) → distributor 
 
 ```text
 src/MigrateRepV2Token.sol            production ERC-20
-script/DeployMigrateRepV2Token.s.sol deployment script (no key, no RPC, no broadcast)
+script/DeployMigrateRepV2Token.s.sol deployment script (embeds no account, key, RPC, or network)
 test/                                unit, fuzz, invariant, gas, and deploy-script tests
-ops/                                 Bun/TypeScript recipient-manifest tooling
+ops/src/manifest.ts                  deterministic recipient manifest (derived cap, provenance)
+ops/src/distribution-plan.ts         offline manifest-to-deployment binding and batch calldata
+ops/src/cli.ts                       offline manifest command (bun run manifest)
 docs/SPEC.md                         authoritative contract behavior
 docs/OPERATIONS.md                   deployment, recipient, and communications controls
 docs/VALIDATION.md                   current local evidence
 ```
+
+The deployment script embeds no account, key, RPC, or network and does not broadcast unless a human explicitly invokes Forge with broadcasting enabled (it contains `vm.startBroadcast()`, which activates under `--broadcast`).
 
 ## Local commands
 
@@ -78,6 +85,12 @@ make check-deep   # deep fuzz/invariant profile, once
 
 The canonical build uses Solidity 0.8.36, EVM Osaka, optimizer enabled with 200 runs, via IR disabled, and pinned OpenZeppelin Contracts v5.6.1. The `MAX_BATCH_SIZE` of 200 is measurement-derived: its worst-case successful call uses about 9.61M gas, 57% of the Osaka transaction cap. See [docs/VALIDATION.md](docs/VALIDATION.md) for gas, coverage, and diagnostics.
 
+## Recipient selection
+
+Recipient eligibility is a human policy decision belonging to the project owner, not to this repository or its tooling. Taking every address from an explorer holder list is not an approved methodology. The source chains and contracts, snapshot block, dust threshold, and treatment of exchanges, custodians, bridges, contracts, smart wallets, and burn addresses are all unresolved and must be approved in writing. This repository validates, checksums, and packages an approved list; it never invents one. See [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+Every manifest derives `recipientCap` from the final unique recipient list — the tooling accepts no cap, so a manifest cannot carry undisclosed headroom — and requires explicit snapshot and ruleset provenance.
+
 ## Status
 
-The contract is implemented and locally validated. No production deployment exists, and recipient selection, the numeric `recipientCap`, the production distributor, and any live-chain rehearsal remain separate, human-approved stages. Local validation is evidence for tested paths; it is not an audit and does not prove that vulnerabilities are absent. No task in this repository authorizes RPC access, key handling, signing, deployment, verification, or broadcast.
+The contract is implemented and locally validated. No production deployment exists, and recipient selection, the numeric `recipientCap`, the production distributor, and any live-chain rehearsal remain separate, human-approved stages. Local validation is evidence for tested paths; it is not an audit and does not prove that vulnerabilities are absent. The candidate is not approved for mainnet until an independent Solidity reviewer has inspected it. No task in this repository authorizes RPC access, key handling, signing, deployment, verification, or broadcast.

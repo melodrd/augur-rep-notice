@@ -9,8 +9,11 @@ No step here authorizes RPC access, wallet or key handling, signing, submission,
 Stop and preserve evidence if any of the following occurs:
 
 - a required human approval or independent review is missing;
-- source, compiler settings, dependency pins, bytecode, ABI, metadata, constructor data, chain, distributor, cap, manifest, calldata, nonce, or checksum differs from the reviewed artifact;
-- the manifest count does not match the approved `recipientCap`;
+- the recipient eligibility policy, snapshot, or exclusion decisions are not approved in writing by the project owner;
+- source, compiler settings, dependency pins, bytecode, ABI, metadata, constructor data, chain, distributor, cap, manifest, provenance, calldata, nonce, or checksum differs from the reviewed artifact;
+- `MREP2_RECIPIENT_CAP` is not exactly the approved manifest's derived `recipientCap`;
+- the deployed token address appears in the recipient list;
+- the distributor is the token contract's own address;
 - a test, simulation, source-verification, gas-bound, or reconciliation check fails;
 - an unexplained transaction, replacement, event, balance, counter, EOA activity, or publication change appears;
 - key compromise, manifest misuse, wrong-chain preparation, or incorrect calldata is suspected; or
@@ -18,17 +21,84 @@ Stop and preserve evidence if any of the following occurs:
 
 Do not work around a stop condition. The responsible humans decide whether to correct, abandon, redeploy, finalize, or resume.
 
+## Recipient selection is a human policy gate
+
+**Recipient selection is not a repository decision, and no agent or tool may make it.** This repository can validate, normalize, checksum, and package an approved list. Approving the eligibility policy that produces that list is the project owner's, and only the project owner's, decision.
+
+Taking every address from an explorer holder list is **not** an approved recipient methodology. A holder list is an unreviewed, unattributed snapshot of one contract at one moment; it silently mixes exchanges, bridges, contracts, and dust, records no rules, and cannot be reproduced or audited later.
+
+The following decisions are unresolved and must each be settled and recorded in writing by the project owner before any manifest is production data:
+
+```text
+source chain or chains
+source REP/REPv2 contract addresses
+snapshot block number and hash
+whether already migrated addresses are included
+minimum balance or dust threshold
+treatment of exchanges and custodians
+treatment of bridges, escrow, wrappers, and protocol contracts
+treatment of smart wallets and multisignatures
+treatment of burn/dead addresses
+treatment of known project-controlled contracts
+deduplication across sources
+manual-review requirements
+final inclusion and exclusion approval
+```
+
+The final process must produce, and retain: included addresses; excluded addresses; manual-review addresses; a stable reason code for every exclusion or manual-review decision; the source balance in raw integer units; a source reference for each decision; the final unique included count; and checksums of every frozen input and output. Store no personal information — an address, a raw balance, a reason code, and a source reference are sufficient, and nothing that identifies a natural person may enter this repository.
+
+### Recipient classes requiring an explicit decision
+
+None of these classes is automatically valid or invalid. Each needs a recorded policy decision with a reason, not a default:
+
+EOAs; Safe and other smart-wallet contracts; centralized-exchange hot and cold wallets; custodians; bridges; escrow contracts; wrappers; liquidity contracts; Augur protocol contracts; dead and burn addresses; and contracts that held REP on behalf of multiple users.
+
+Do not attempt to resolve this on chain with a `code.length` filter. Contract recipients may be entirely legitimate — a multisignature or smart wallet is an ordinary user — and bytecode presence does not identify who controls an address or on whose behalf it held REP. The contract deliberately performs no bytecode check; it rejects only the zero address and the token contract itself.
+
 ## Recipient manifest
 
-Recipient selection is security- and reputation-sensitive business logic and is out of scope for this repository until separately approved. Do not invent REP sources, snapshots, migration semantics, thresholds, exclusions, or addresses.
+The tooling in `ops/src/manifest.ts` prepares distribution off-chain and deterministically. It validates every address, rejects zero and duplicate addresses, normalizes for comparison, sorts by one canonical rule (ascending lowercase 20-byte hex), splits into batches no larger than the operational batch size, and records batch numbers, recipient counts, cumulative recipient counts, the expected remaining initial allocation after each batch, and cryptographic checksums (canonical recipients, per-batch, and full-manifest). It never repairs a malformed address, stores no personal data, and never signs, broadcasts, or reaches the network.
 
-The tooling in `ops/src/manifest.ts` prepares distribution off-chain and deterministically. It validates every address, rejects zero and duplicate addresses, normalizes for comparison, sorts by one canonical rule (ascending lowercase 20-byte hex), splits into batches no larger than the operational batch size, and records batch numbers, recipient counts, cumulative recipient counts, the expected reserve after each batch, and cryptographic checksums (input, per-batch, and full-manifest). It refuses to generate more recipients than `recipientCap`, never repairs a malformed address, stores no personal data, and never signs or broadcasts.
+**The recipient cap is derived, not supplied.** `recipientCap` equals the number of addresses in the final normalized unique list, and `maximumSupply` equals `recipientCap * TOKEN_PER_RECIPIENT`. The build API accepts no cap, so a manifest cannot carry discretionary supply or distribution headroom, and an empty recipient list is rejected. `MREP2_RECIPIENT_CAP` must be copied exactly from the approved manifest; it is never chosen independently, and never given a margin.
 
-The approved manifest's unique-address count becomes the exact nonzero constructor `recipientCap`; add no discretionary margin. Regenerate from frozen inputs; never edit a production manifest by hand. On-chain duplicate protection remains authoritative even though the manifest is deduplicated. The contract hard limit is 200 recipients per `distribute` call; operations should normally use about 100 (and no more than 150) for easier review, signing, monitoring, and reconciliation.
+Every manifest requires provenance — explicit, human-supplied values that are validated but never invented: `chainId`, `snapshotBlockNumber`, `snapshotBlockHash`, `sourceContracts`, `sourceDataChecksum`, `rulesetId`, and `rulesetChecksum`. A manifest without them is not production-reviewable and the tooling refuses to build one.
+
+Two checksums answer two different questions, and neither substitutes for the other:
+
+- `canonicalRecipientsChecksum` — computed over the normalized, deduplicated, sorted, checksummed recipient array. It proves the recipient array in the manifest is the array that was reviewed. It does **not** prove the original source data was unchanged: it is computed after normalization and sorting, not over the original input bytes.
+- `provenance.sourceDataChecksum` — the checksum of the frozen source data as extracted, before any transformation. This is the one that binds the manifest to its source.
+
+The manifest checksum covers the schema version, provenance, token-per-recipient, recipient cap, maximum supply, batch size, canonical sort rule, canonical recipients checksum, and every batch. Manifests are schema-versioned; the current version is 2. Version 1 manifests use different field names and semantics (`inputChecksum`, `expectedReserveAfter`, a caller-supplied cap) and must be regenerated rather than converted.
+
+Regenerate from frozen inputs; never edit a production manifest by hand. On-chain duplicate protection remains authoritative even though the manifest is deduplicated. The contract hard limit is 200 recipients per `distribute` call; operations should normally use about 100 (and no more than 150) for easier review, signing, monitoring, and reconciliation.
+
+Build a manifest offline with the packaged command. It reads explicit files, writes JSON and CSV, refuses to overwrite existing output unless `--force` is passed, prints the final counts and checksums, and makes no network request:
+
+```bash
+cd ops && bun run manifest -- \
+  --recipients ../data/snapshots/approved-recipients.json \
+  --provenance ../data/snapshots/approved-provenance.json \
+  --batch-size 100 \
+  --out-dir ../data/batches/candidate-1
+```
+
+### Remaining initial allocation is not the contract balance
+
+The manifest's `expectedRemainingInitialAllocationAfter` is `(recipientCap - cumulativeRecipients) * TOKEN_PER_RECIPIENT`: an off-chain projection of the original allocation not yet distributed. It is **not** a prediction of the token contract's live balance. MREP2 is freely transferable, so any holder may transfer tokens back to `address(token)`, and `balanceOf(address(token))` can therefore exceed the remaining initial allocation by an arbitrary amount. Reconcile the two separately and never treat a positive difference as an accounting defect on its own.
+
+## Offline distribution plan
+
+The final token address does not exist when the recipient snapshot is prepared, so an approved manifest cannot name it. `ops/src/distribution-plan.ts` performs the one deterministic step that binds an approved manifest to a deployed candidate, entirely offline.
+
+It takes the approved manifest, the chain ID, the deployed token address, the candidate source commit, and the runtime bytecode hash. It validates the token address and rejects the zero address; rejects the plan if the deployed token address appears anywhere in the recipient list; rejects a chain that does not match the manifest snapshot; preserves the manifest's recipient order and batch composition exactly; encodes the exact `distribute(address[])` calldata for each batch with viem; and records a checksum of each calldata payload, the manifest checksum, and the expected cumulative initial-recipient count and remaining initial allocation after each batch.
+
+It makes no RPC request, signs nothing, and broadcasts nothing. It deliberately records **no nonce, fee, or gas figure**: any such value produced offline would be a guess presented as authoritative. The human preparing each transaction supplies those from live chain state under a separately authorized task.
+
+The plan exists so a human can compare the exact decoded transaction against the approved batch before signing: for each batch, the calldata in the plan must equal, byte for byte, what the signing device is about to sign.
 
 ## Candidate and unsigned artifacts
 
-Before rehearsal or deployment: freeze the source commit, Solidity compiler, optimizer, EVM target, dependency pins, creation and runtime bytecode, ABI, storage layout, and hashes; reproduce the candidate independently; classify compiler and Slither findings; review constructor arguments and encoded data; confirm the distributor and cap are nonzero and the cap equals the manifest count; and confirm the ABI contains only the approved surface and no forbidden selector. Every unsigned artifact states chain and chain ID, target, value, nonce assumptions, decoded calldata, checksum, expected state transition, expected counters, and simulation result, and contains no secret.
+Before rehearsal or deployment: freeze the source commit, Solidity compiler, optimizer, EVM target, dependency pins, creation and runtime bytecode, ABI, storage layout, and hashes; reproduce the candidate independently; classify compiler and Slither findings; review constructor arguments and encoded data; confirm the distributor and cap are nonzero, the distributor is not the predicted token address, and the cap equals the manifest's derived count; and confirm the ABI contains only the approved surface and no forbidden selector. Every unsigned artifact states chain and chain ID, target, value, nonce assumptions, decoded calldata, checksum, expected state transition, expected counters, and simulation result, and contains no secret.
 
 Regenerate the frozen artifacts from the canonical build:
 
@@ -43,13 +113,15 @@ forge inspect MigrateRepV2Token storageLayout
 
 The production distributor is one dedicated EOA controlled by the project owner. The same address is expected to deploy and be supplied explicitly as `distributor`; deployment by itself grants no token balance or privilege. Use no everyday, shared, or unrelated wallet; prefer hardware-backed signing; keep only reasonably required operational ETH; use a distinct Sepolia-only key for any testnet work. Review chain, target, value, calldata, nonce, manifest checksum, and simulation before every signature. Humans alone control, sign with, submit from, and monitor the EOA. Agents and tooling must never request, read, create, import, store, print, or operate any key or secret.
 
+The distributor must be neither the zero address nor the token contract's own address; the constructor rejects both. A deployment that passed the predicted token address as its distributor would be permanently unusable, because only the token contract could call `distribute` or `finalizeDistribution` and it has no self-call mechanism. A reviewed contract distributor, such as a multisignature, remains valid.
+
 Key loss can prevent distribution and finalization. Compromise can cause wrong-recipient distribution within remaining cap headroom or premature finalization. Neither risk creates an on-chain recovery administrator, and no reserve-recovery path exists.
 
 ## Deployment tooling
 
-The repository contains one auditable deployment script, `script/DeployMigrateRepV2Token.s.sol`. It reads two non-secret environment values, rejects a zero distributor or zero cap before any broadcast preparation, deploys exactly one `MigrateRepV2Token` with those values passed explicitly, and logs the deployed address, distributor, cap, and maximum supply. It performs no distribution, transfer, approval, or finalization; embeds no network, account, key, RPC endpoint, or secret; deploys no liquidity; and never reads a private key, mnemonic, or keystore password. Signing and broadcasting are supplied entirely by a human-run Foundry command in a later, separately authorized task.
+The repository contains one auditable deployment script, `script/DeployMigrateRepV2Token.s.sol`. It reads two non-secret environment values, rejects a zero distributor or zero cap before any broadcast preparation, deploys exactly one `MigrateRepV2Token` with those values passed explicitly, and logs the deployed address, distributor, cap, and maximum supply. It performs no distribution, transfer, approval, or finalization; embeds no network, account, key, RPC endpoint, or secret; deploys no liquidity; and never reads a private key, mnemonic, or keystore password. The script contains `vm.startBroadcast()` and will broadcast when a human explicitly invokes Forge with `--broadcast`; it embeds no account, key, RPC, or network and does not broadcast otherwise.
 
-Set the two non-secret arguments and the RPC endpoint in the operator's shell. `MREP2_DISTRIBUTOR` and `MREP2_RECIPIENT_CAP` must equal the reviewed, approved values, and the cap must equal the frozen manifest's unique-address count.
+Set the two non-secret arguments and the RPC endpoint in the operator's shell. `MREP2_DISTRIBUTOR` and `MREP2_RECIPIENT_CAP` must equal the reviewed, approved values, and the cap must be copied exactly from the frozen manifest's derived `recipientCap`.
 
 ```bash
 export MREP2_DISTRIBUTOR="0x..."
@@ -67,7 +139,7 @@ The `--broadcast --verify` shape is recorded for reference only and is **not aut
 
 ## Distribution and finalization
 
-Humans approve the batch sequence and stop conditions. For each `distribute` transaction: compare the decoded ordered array with the numbered manifest and checksum; confirm a count within the operational size; confirm chain, target, zero value, nonce, gas, expected cumulative `totalInitialRecipients`, and expected reserve; have the project owner review and sign; record the transaction, block, nonce, and fee; and reconcile before preparing the next batch. Reconciliation requires exact calldata and `Transfer` event order, `wasInitialRecipient == true` for every distributed address, a one-token balance increase per recipient, `totalInitialRecipients` equal to unique successful recipients, unchanged `totalSupply`, and `totalInitialRecipients <= recipientCap`. Any mismatch is a stop condition.
+Humans approve the batch sequence and stop conditions. Generate the offline distribution plan once the candidate is deployed, then work from it. For each `distribute` transaction: compare the decoded ordered array with the numbered manifest batch, its checksum, and the plan's calldata byte for byte; confirm a count within the operational size; confirm chain, target, zero value, nonce, gas, expected cumulative `totalInitialRecipients`, and expected remaining initial allocation; have the project owner review and sign; record the transaction, block, nonce, and fee; and reconcile before preparing the next batch. Reconciliation requires exact calldata and `Transfer` event order, `wasInitialRecipient == true` for every distributed address, a one-token balance increase per recipient, `totalInitialRecipients` equal to unique successful recipients, unchanged `totalSupply`, and `totalInitialRecipients <= recipientCap`. Any mismatch is a stop condition.
 
 Finalize only after reconciling every manifest, event, counter, and remaining cap, with no unresolved incident and human approval. Decode and simulate the exact zero-value `finalizeDistribution` transaction; record both `totalInitialRecipients` and `contractBalanceAtFinalization` (the token contract's complete balance, `balanceOf(address(this))`, and the event's third field). Separately compute the remaining initial allocation as `(recipientCap - totalInitialRecipients) * TOKEN_PER_RECIPIENT`. If the contract balance exceeds that figure, the difference is tokens transferred to the contract outside initial distribution; do not treat such a difference as a contract accounting defect on its own — investigate and record it before finalizing. No rescue or withdrawal path exists for returned tokens. Finalizing below the cap requires a written reason. After confirmation, record `DistributionFinalized` and prove later distribution and repeated finalization revert while standard transfers still succeed. Consider immediate finalization for a credible incident while the owner retains legitimate control; it cannot recover a key, reverse prior distribution, or move the locked reserve.
 
