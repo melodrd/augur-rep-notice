@@ -203,6 +203,38 @@ forge inspect RepMigrationAlert events
 forge inspect RepMigrationAlert errors
 ```
 
+## Deployment tooling and candidate freeze
+
+`script/DeployRepMigrationAlert.s.sol` is operational deployment tooling. It reads a non-secret authority and cap, rejects a zero authority or zero cap before broadcast preparation, and deploys exactly one `RepMigrationAlert` with those values passed explicitly. It is not part of the production contract and does not change production bytecode. The script and its tests live under `script/` and `test/`, which the production build and Slither exclude, so the compiled creation and runtime bytecode of `RepMigrationAlert` are byte-for-byte identical before and after the tooling was added.
+
+| Item | Value |
+| --- | --- |
+| Production source commit | `c073983edf3ef838c465734c1083ca8e8fc795b3` |
+| Tooling commit | `feat: add minimal deployment tooling` on branch `feat/sepolia-deployment-tooling` |
+| Solidity | `0.8.36` |
+| EVM target | `osaka` |
+| Optimizer | enabled, 200 runs |
+| Via IR | disabled |
+| Expected constructor | `constructor(address authority_, uint256 distributionCap_)` |
+
+Regenerate the frozen artifacts from the canonical build rather than trusting precomputed values:
+
+```bash
+forge inspect RepMigrationAlert bytecode
+forge inspect RepMigrationAlert deployedBytecode
+forge inspect RepMigrationAlert abi
+forge inspect RepMigrationAlert storageLayout
+```
+
+Hash the creation and runtime bytecode to compare the production contract before and after the tooling change:
+
+```bash
+forge inspect RepMigrationAlert bytecode | sha256sum
+forge inspect RepMigrationAlert deployedBytecode | sha256sum
+```
+
+Any production-bytecode difference between the production source commit and the tooling commit is a stop condition.
+
 ## Known limitations and remaining work
 
 - No formal audit or independent human release review has occurred.

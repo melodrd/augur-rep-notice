@@ -106,6 +106,72 @@ Before a human signs a deployment transaction, independently confirm:
 
 An incorrect authority, cap, chain, bytecode, or constructor value is an abandon-or-redeploy condition, not a repairable configuration.
 
+## Deployment tooling
+
+The repository contains one auditable deployment script, `script/DeployRepMigrationAlert.s.sol`. It reads two non-secret values from the environment, rejects a zero authority or zero cap before any broadcast preparation, deploys exactly one `RepMigrationAlert` with the authority and cap passed explicitly, and logs the deployed address. It performs no distribution or finalization, embeds no network, account, key, RPC endpoint, secret, or production address, and never reads a private key, mnemonic, or keystore password. Account selection, signing, and broadcasting are supplied entirely by a human-run Foundry command during a later, separately authorized task; documenting the commands here does not authorize an agent to run them.
+
+Set the two contract arguments and the RPC endpoint in the operator's shell. `ALERT_AUTHORITY` and `DISTRIBUTION_CAP` must equal the reviewed, approved values, and `DISTRIBUTION_CAP` must equal the frozen manifest's unique-address count.
+
+```bash
+export ALERT_AUTHORITY="0x..."
+export DISTRIBUTION_CAP="..."
+export SEPOLIA_RPC_URL="..."
+```
+
+`SEPOLIA_RPC_URL` is sensitive provider configuration. Keep it only in the operator's shell or an untracked `.env`; never commit it, log it, or place it in a tracked file. `.env` and its variants are git-ignored.
+
+Confirm the endpoint points at Sepolia before anything else:
+
+```bash
+cast chain-id --rpc-url "$SEPOLIA_RPC_URL"
+```
+
+The expected Sepolia chain ID is:
+
+```text
+11155111
+```
+
+Simulate the deployment with no broadcasting. This reads the environment, runs the script's validation, and reports the would-be transaction without signing or sending anything:
+
+```bash
+forge script \
+  script/DeployRepMigrationAlert.s.sol:DeployRepMigrationAlert \
+  --rpc-url "$SEPOLIA_RPC_URL" \
+  -vvvv
+```
+
+The following broadcast shape is recorded for reference only and is **not authorized by this task**. A human runs it under a separate, explicitly authorized task, selecting the signing account through Foundry's keystore mechanism (`--account`); this repository and its tooling never hold the key:
+
+```bash
+forge script \
+  script/DeployRepMigrationAlert.s.sol:DeployRepMigrationAlert \
+  --chain sepolia \
+  --rpc-url "$SEPOLIA_RPC_URL" \
+  --account <SEPOLIA_KEYSTORE_ACCOUNT> \
+  --broadcast \
+  --verify \
+  --verifier etherscan \
+  --etherscan-api-key "$ETHERSCAN_API_KEY" \
+  -vvvv
+```
+
+After a deployment is confirmed, independently read the live contract and reconcile every value against the reviewed candidate and constructor arguments:
+
+```bash
+cast call "$DEPLOYED_ADDRESS" "name()(string)"             --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "symbol()(string)"           --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "decimals()(uint8)"          --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "MAX_BATCH_SIZE()(uint256)"  --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "authority()(address)"       --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "distributionCap()(uint256)" --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "totalIssued()(uint256)"     --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "totalSupply()(uint256)"     --rpc-url "$SEPOLIA_RPC_URL"
+cast call "$DEPLOYED_ADDRESS" "finalized()(bool)"          --rpc-url "$SEPOLIA_RPC_URL"
+```
+
+Expect the fixed metadata, `MAX_BATCH_SIZE` of 500, the exact supplied authority and cap, zero `totalIssued` and `totalSupply`, and `finalized` false. Any mismatch is a stop condition.
+
 ## Sepolia rehearsal
 
 Sepolia requires explicit authorization and a separate test-only dedicated EOA. Deploy the exact candidate and verify its source. Exercise:
