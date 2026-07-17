@@ -16,17 +16,20 @@ MREP2 must behave like an ordinary ERC-20 at all times and earn trust through co
 
 - Inherit only OpenZeppelin `ERC20`. Do not override ERC-20 externals or internals (`_update`, `_transfer`, `_approve`, `_spendAllowance`) absent a demonstrated compatibility defect.
 - The whole supply is minted to `address(this)` once in the constructor. No function may increase `totalSupply()` afterward.
-- The reserve leaves the contract only through distributor-only `distribute`. There is no reserve recovery, rescue, or arbitrary transfer-from-contract path.
+- The initial allocation leaves the contract only through distributor-only `distribute`. There is no reserve recovery, rescue, or arbitrary transfer-from-contract path.
 - `wasInitialRecipient` only changes false to true and is distribution history, not a balance or eligibility claim.
 - `finalizeDistribution` is irreversible and closes distribution only; it never freezes standard token behavior.
+- The token contract is neither a valid recipient nor a valid distributor. Every other address, including contracts, is valid for both: never filter recipients on `code.length`.
+- Keep **remaining initial allocation** `(recipientCap - totalInitialRecipients) * 1e18` and **token contract balance** `balanceOf(address(this))` strictly distinct. Holders may transfer MREP2 back to the contract, so the balance is the allocation plus returned tokens and is not predictable off-chain.
 
 ## Current contract invariants
 
 - Metadata is fixed: `MIGRATE REPV2`, `MREP2`, 18 decimals (inherited, not overridden). `TOKEN_PER_RECIPIENT == 1e18`, `MAX_BATCH_SIZE == 200`.
 - Construction sets nonzero immutable `distributor` and `recipientCap`, computes `maximumSupply = recipientCap * 1e18` (overflow-checked), and mints it to the token contract. Deployer and distributor start at zero.
+- Constructor precedence: zero distributor, token-contract distributor, zero cap, then overflow.
 - `totalSupply() == maximumSupply` forever; `totalInitialRecipients <= recipientCap`.
-- `distribute(address[])` is the sole reserve-exit path, distributor-only, atomic, one token per recipient, one standard `Transfer` per recipient in calldata order.
-- Distribution precedence: authorization, finalized, empty, maximum batch, recipient cap, then per-recipient (zero, then already-distributed which also catches in-batch duplicates).
+- `distribute(address[])` is the sole allocation-exit path, distributor-only, atomic, one token per recipient, one standard `Transfer` per recipient in calldata order.
+- Distribution precedence: authorization, finalized, empty, maximum batch, recipient cap, then per-recipient (zero, token contract, then already-distributed which also catches in-batch duplicates).
 - `finalizeDistribution()` is distributor-only, irreversible, and emits `DistributionFinalized`; transfers/approvals/`transferFrom` continue afterward.
 - Standard ERC-20 transfer, approve, allowance, and transferFrom are unrestricted, including zero-value transfers and the OpenZeppelin infinite-allowance rule.
 
@@ -56,7 +59,13 @@ Canonical settings in `foundry.toml`: Solidity 0.8.36, EVM Osaka, optimizer enab
 
 ## TypeScript operations
 
-Bun is the sole JavaScript package manager; never use npm or pnpm, and never create their lockfiles. Install with `bun install --frozen-lockfile`. `tsc --noEmit` is mandatory type checking; Biome handles formatting and linting. Use viem, Zod, deterministic JSON/CSV, cryptographic checksums, and `bigint` for on-chain integers — never floating point. The recipient tooling must validate and normalize addresses, reject zero and duplicate addresses, sort canonically, batch within the operational size, refuse to exceed `recipientCap`, store no personal data, and never repair an address, sign, or broadcast.
+Bun is the sole JavaScript package manager; never use npm or pnpm, and never create their lockfiles. Install with `bun install --frozen-lockfile`. `tsc --noEmit` is mandatory type checking; Biome handles formatting and linting. Use viem, Zod, deterministic JSON/CSV, cryptographic checksums, and `bigint` for on-chain integers — never floating point. The recipient tooling must validate and normalize addresses, reject zero and duplicate addresses, sort canonically, batch within the operational size, store no personal data, and never repair an address, sign, or broadcast.
+
+- `recipientCap` is **derived** from the final unique recipient list and must never become a caller-supplied option again: that is what makes undisclosed headroom impossible. Empty recipient lists are rejected.
+- Provenance is mandatory and never invented, defaulted, or derived. Validate it; do not fill it in.
+- `canonicalRecipientsChecksum` covers the normalized array and must never be described as proving the original source data was unchanged; `provenance.sourceDataChecksum` is that proof.
+- `ops/src/distribution-plan.ts` is offline only. It must never gain an RPC call, a signer, or an authoritative nonce, fee, or gas figure, and must not grow into a general transaction framework.
+- Bump `MANIFEST_SCHEMA_VERSION` whenever a manifest field name or meaning changes.
 
 ## Safety boundary
 

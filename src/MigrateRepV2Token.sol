@@ -47,6 +47,13 @@ contract MigrateRepV2Token is ERC20 {
     /// @notice Reverts when the constructor distributor is the zero address.
     error ZeroDistributor();
 
+    /// @notice Reverts when the constructor distributor is the token contract itself.
+    /// @dev A deployment can predict its own address and pass it as the distributor. That would
+    ///      permanently disable distribution: only the token contract could call {distribute} or
+    ///      {finalizeDistribution}, and the token has no self-call mechanism. Other contract
+    ///      distributors, such as a reviewed multisignature, remain valid.
+    error TokenContractDistributor();
+
     /// @notice Reverts when the constructor recipient cap is zero.
     error ZeroRecipientCap();
 
@@ -77,6 +84,15 @@ contract MigrateRepV2Token is ERC20 {
     /// @param index The zero-address recipient's calldata index.
     error ZeroRecipient(uint256 index);
 
+    /// @notice Reverts when a recipient is the token contract itself.
+    /// @dev Distributing to `address(this)` would self-transfer the unit, leaving the contract
+    ///      balance unchanged while still consuming one unit of `recipientCap` and permanently
+    ///      recording the token contract as an initial recipient. Ordinary contract recipients
+    ///      are not rejected: multisignatures, custody addresses, and smart wallets may
+    ///      legitimately appear in a separately approved recipient list.
+    /// @param index The token-contract recipient's calldata index.
+    error TokenContractRecipient(uint256 index);
+
     /// @notice Reverts when a recipient was already an initial recipient, including a duplicate
     ///         earlier in the same batch.
     /// @param recipient The previously distributed or duplicated recipient.
@@ -97,12 +113,18 @@ contract MigrateRepV2Token is ERC20 {
 
     /// @notice Creates the token, fixes the supply, and mints the whole reserve to the contract.
     /// @dev The deployer and distributor receive no token balance at construction. No function
-    ///      can increase totalSupply() afterward.
-    /// @param distributor_ The sole address permitted to distribute or finalize.
+    ///      can increase totalSupply() afterward. Validation precedence is exact: zero
+    ///      distributor, token-contract distributor, zero recipient cap, then supply overflow.
+    /// @param distributor_ The sole address permitted to distribute or finalize. It must be
+    ///        neither the zero address nor the token contract itself; any other address,
+    ///        including a reviewed contract, is accepted.
     /// @param recipientCap_ The maximum number of unique initial recipients.
     constructor(address distributor_, uint256 recipientCap_) ERC20("MIGRATE REPV2", "MREP2") {
         if (distributor_ == address(0)) {
             revert ZeroDistributor();
+        }
+        if (distributor_ == address(this)) {
+            revert TokenContractDistributor();
         }
         if (recipientCap_ == 0) {
             revert ZeroRecipientCap();
@@ -125,6 +147,8 @@ contract MigrateRepV2Token is ERC20 {
     ///      atomic: any invalid recipient reverts all prior mapping writes, balance changes,
     ///      events, and counter updates in the call. Duplicates within the batch and addresses
     ///      distributed to in an earlier batch are both rejected by {wasInitialRecipient}.
+    ///      Per-recipient validation precedence is exact: zero address, token contract, then
+    ///      prior initial recipient. Recipients are never filtered on bytecode presence.
     /// @param recipients The ordered recipient addresses to receive one initial token each.
     function distribute(address[] calldata recipients) external {
         if (msg.sender != distributor) {
@@ -151,6 +175,9 @@ contract MigrateRepV2Token is ERC20 {
             address recipient = recipients[i];
             if (recipient == address(0)) {
                 revert ZeroRecipient(i);
+            }
+            if (recipient == address(this)) {
+                revert TokenContractRecipient(i);
             }
             if (wasInitialRecipient[recipient]) {
                 revert RecipientAlreadyDistributed(recipient);
