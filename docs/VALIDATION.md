@@ -8,7 +8,7 @@ This document records reproducible evidence for the current `RepMigrationAlert` 
 
 | Item | Value |
 | --- | --- |
-| Production source commit | `3945bdcd5b895d1a411ad2b4e15edcf2e2c44c3c` |
+| Production source commit | `c073983edf3ef838c465734c1083ca8e8fc795b3` |
 | Contract | `src/RepMigrationAlert.sol` |
 | Solidity | `0.8.36` |
 | EVM target | `osaka` |
