@@ -9,7 +9,7 @@ import {MigrateRepV2TokenHandler} from "./MigrateRepV2TokenHandler.sol";
 /// @dev Compact stateful campaign (~16 runs x 64 depth). It reconciles the full balance set,
 ///      permanent history, distribution accounting, and post-finalization behavior.
 ///
-///      The handler models every permitted ERC-20 behavior, including holders transferring MREP2
+///      The handler models every permitted ERC-20 behavior, including holders transferring CHECKAUGUR
 ///      back to `address(token)`. The token contract's balance is therefore not the remaining
 ///      initial allocation: it is that allocation plus whatever has been returned.
 contract MigrateRepV2TokenInvariant is Test {

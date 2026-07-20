@@ -19,8 +19,8 @@ contract DeployMigrateRepV2TokenTest is Test {
 
     function test_deploy_sets_exact_metadata() public {
         MigrateRepV2Token token = script.deploy(DISTRIBUTOR, CAP);
-        assertEq(token.name(), "MIGRATE REPV2");
-        assertEq(token.symbol(), "MREP2");
+        assertEq(token.name(), "CHECK AUGUR MIGRATION");
+        assertEq(token.symbol(), "CHECKAUGUR");
         assertEq(token.decimals(), 18);
     }
 

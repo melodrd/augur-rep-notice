@@ -1,12 +1,12 @@
 # Communications
 
-Public-facing material for MREP2: explorer and wallet metadata, and user messaging. It gives an accurate, neutral account of what the token does and does not do. Contract behavior is in [SPEC.md](SPEC.md); operating the contract is in [OPERATIONS.md](OPERATIONS.md).
+Public-facing material for CHECKAUGUR: explorer and wallet metadata, and user messaging. It gives an accurate, neutral account of what the token does and does not do. Contract behavior is in [SPEC.md](SPEC.md); operating the contract is in [OPERATIONS.md](OPERATIONS.md).
 
 Nothing here is submitted from this repository. Prepare and review the material; a human publishes it under a separate task. Do not invent missing values — leave placeholders.
 
 ## Token description
 
-> MIGRATE REPV2 (MREP2) is a fixed-supply ERC-20 notice token. One token is distributed to each selected address. MREP2 does not perform REP migration or grant any claim, redemption, governance, or financial right.
+> CHECK AUGUR MIGRATION (CHECKAUGUR) is a fixed-supply ERC-20 notice token. One token is distributed to each selected address. CHECKAUGUR does not perform REP migration or grant any claim, redemption, governance, or financial right.
 
 ## Authentication
 
@@ -16,7 +16,7 @@ A specific deployment is identified by its verified, checksummed contract addres
 
 Tell users plainly:
 
-- receiving MREP2 requires no action;
+- receiving CHECKAUGUR requires no action;
 - do not approve, transfer, swap, bridge, claim, deposit, sign, or connect a wallet because of it;
 - reach any website by navigating to it yourself, not by following a link from the token, a message, or a search result;
 - any market price is third-party and implies no project endorsement.
@@ -36,4 +36,4 @@ token description   : the description above
 source repository   : <if public>
 ```
 
-The package must state: exact name `MIGRATE REPV2`, symbol `MREP2`, decimals `18`; fixed maximum supply with no post-deployment minting; no taxes, blacklist, or pause; no owner or roles; no upgradeability; no project-supported liquidity or price; that the token performs no migration; and that receiving it requires no wallet connection, approval, swap, claim, bridge, or payment.
+The package must state: exact name `CHECK AUGUR MIGRATION`, symbol `CHECKAUGUR`, decimals `18`; fixed maximum supply with no post-deployment minting; no taxes, blacklist, or pause; no owner or roles; no upgradeability; no project-supported liquidity or price; that the token performs no migration; and that receiving it requires no wallet connection, approval, swap, claim, bridge, or payment.

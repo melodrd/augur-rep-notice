@@ -1,6 +1,6 @@
 # Operations
 
-Recipient preparation, distribution, reconciliation, and finalization for `MigrateRepV2Token` (MREP2). Contract behavior is in [SPEC.md](SPEC.md); deployment is in [DEPLOYMENT.md](DEPLOYMENT.md); public messaging is in [COMMUNICATIONS.md](COMMUNICATIONS.md).
+Recipient preparation, distribution, reconciliation, and finalization for `MigrateRepV2Token` (CHECKAUGUR). Contract behavior is in [SPEC.md](SPEC.md); deployment is in [DEPLOYMENT.md](DEPLOYMENT.md); public messaging is in [COMMUNICATIONS.md](COMMUNICATIONS.md).
 
 No step here authorizes RPC access, key handling, signing, or broadcast. Those require a separately approved human task. The tooling in `ops/` is offline: it validates and packages an approved recipient list and never signs, broadcasts, or reaches the network.
 
@@ -36,7 +36,7 @@ The selection process must produce and retain: included, excluded, and manual-re
 
 ## Manifest
 
-The manifest is the offline, human-approved recipient artifact: the exact set of addresses that will each receive one MREP2 token, plus the provenance of how that set was chosen. The contract never reads it; the only value that crosses into the contract is the derived cap, copied by hand into `MREP2_RECIPIENT_CAP`.
+The manifest is the offline, human-approved recipient artifact: the exact set of addresses that will each receive one CHECKAUGUR token, plus the provenance of how that set was chosen. The contract never reads it; the only value that crosses into the contract is the derived cap, copied by hand into `MREP2_RECIPIENT_CAP`.
 
 It is lean — it stores only authoritative inputs (version, provenance, batch size, canonical recipient list) and derives everything else (cap, maximum supply, batch split, counts) on demand. The format is version 1 with no migration path.
 
@@ -65,7 +65,7 @@ It is lean — it stores only authoritative inputs (version, provenance, batch s
 
 - **The cap is derived, not supplied.** It equals the unique recipient count; the build accepts no cap, so a manifest cannot carry undisclosed headroom. `MREP2_RECIPIENT_CAP` is copied exactly from the derived cap the tool prints, never chosen independently.
 - **Provenance is mandatory and validated for shape, never invented or verified.** The tool checks that the source chain ID, block number and hash, source contracts, ruleset ID, and checksums are present and well-formed; it cannot confirm they describe a real snapshot. `sourceDataSha256` binds the manifest to its frozen source data, and only the human who produced it can attest to that.
-- **Source and target chains are separate.** `provenance.sourceChainId` (where the snapshot was read) is intentionally independent of the plan's `targetChainId` (where MREP2 is deployed); a mainnet snapshot may drive a Sepolia rehearsal.
+- **Source and target chains are separate.** `provenance.sourceChainId` (where the snapshot was read) is intentionally independent of the plan's `targetChainId` (where CHECKAUGUR is deployed); a mainnet snapshot may drive a Sepolia rehearsal.
 - **The detached checksum detects accidents, not adversaries.** `manifest.json.sha256` is unkeyed SHA-256 over the exact emitted bytes. It catches an accidental edit, truncation, or stale file; it proves neither approval nor authenticity.
 
 Regenerate from frozen inputs; never hand-edit a production manifest. The contract hard limit is 200 recipients per call; use about 100 (no more than 150) for easier review, signing, and reconciliation.
@@ -132,7 +132,7 @@ For each `distribute` transaction:
 
 Reconcile before the next batch: exact calldata and `Transfer` event order; `wasInitialRecipient == true` for every distributed address; a one-token balance increase per recipient; `totalInitialRecipients` equal to the unique successful recipients; unchanged `totalSupply`; and `totalInitialRecipients <= recipientCap`. Any mismatch is a stop condition.
 
-The remaining initial allocation, `(recipientCap - totalInitialRecipients) * 1e18`, is an off-chain projection — not a prediction of `balanceOf(token)`. MREP2 is freely transferable, so a holder may return tokens to the contract and push its live balance above the remaining allocation. Reconcile the two separately; a positive difference is not a defect on its own.
+The remaining initial allocation, `(recipientCap - totalInitialRecipients) * 1e18`, is an off-chain projection — not a prediction of `balanceOf(token)`. CHECKAUGUR is freely transferable, so a holder may return tokens to the contract and push its live balance above the remaining allocation. Reconcile the two separately; a positive difference is not a defect on its own.
 
 ## Finalization
 

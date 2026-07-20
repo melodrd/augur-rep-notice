@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository contains `MigrateRepV2Token` (MIGRATE REPV2 / `MREP2`), a conventional, transferable, fixed-supply ERC-20 notice token, plus its deployment script and operational tooling. MREP2 is not REP, REPv2, migrated REP, a migration claim, migration eligibility, a redemption right, a reward, a governance asset, or a project-supported investment asset.
+This repository contains `MigrateRepV2Token` (CHECK AUGUR MIGRATION / `CHECKAUGUR`), a conventional, transferable, fixed-supply ERC-20 notice token, plus its deployment script and operational tooling. CHECKAUGUR is not REP, REPv2, migrated REP, a migration claim, migration eligibility, a redemption right, a reward, a governance asset, or a project-supported investment asset.
 
 Treat contract changes, recipient transformations, deployment preparation, and transaction artifacts as security-sensitive production infrastructure. A passing build is not evidence of an audit, safety, usefulness, or deployment readiness.
 
@@ -12,7 +12,7 @@ When instructions conflict, follow, in order: explicit human instructions for th
 
 ## Design principles
 
-MREP2 must behave like an ordinary ERC-20 at all times and earn trust through conventional behavior, transparent code, verified metadata, and accurate communication — never by manipulating wallet, explorer, or reputation systems, or by fabricating liquidity, volume, or price.
+CHECKAUGUR must behave like an ordinary ERC-20 at all times and earn trust through conventional behavior, transparent code, verified metadata, and accurate communication — never by manipulating wallet, explorer, or reputation systems, or by fabricating liquidity, volume, or price.
 
 - Inherit only OpenZeppelin `ERC20`. Do not override ERC-20 externals or internals (`_update`, `_transfer`, `_approve`, `_spendAllowance`) absent a demonstrated compatibility defect.
 - The whole supply is minted to `address(this)` once in the constructor. No function may increase `totalSupply()` afterward.
@@ -20,11 +20,11 @@ MREP2 must behave like an ordinary ERC-20 at all times and earn trust through co
 - `wasInitialRecipient` only changes false to true and is distribution history, not a balance or eligibility claim.
 - `finalizeDistribution` is irreversible and closes distribution only; it never freezes standard token behavior.
 - The token contract is neither a valid recipient nor a valid distributor. Every other address, including contracts, is valid for both: never filter recipients on `code.length`.
-- Keep **remaining initial allocation** `(recipientCap - totalInitialRecipients) * 1e18` and **token contract balance** `balanceOf(address(this))` strictly distinct. Holders may transfer MREP2 back to the contract, so the balance is the allocation plus returned tokens and is not predictable off-chain.
+- Keep **remaining initial allocation** `(recipientCap - totalInitialRecipients) * 1e18` and **token contract balance** `balanceOf(address(this))` strictly distinct. Holders may transfer CHECKAUGUR back to the contract, so the balance is the allocation plus returned tokens and is not predictable off-chain.
 
 ## Current contract invariants
 
-- Metadata is fixed: `MIGRATE REPV2`, `MREP2`, 18 decimals (inherited, not overridden). `TOKEN_PER_RECIPIENT == 1e18`, `MAX_BATCH_SIZE == 200`.
+- Metadata is fixed: `CHECK AUGUR MIGRATION`, `CHECKAUGUR`, 18 decimals (inherited, not overridden). `TOKEN_PER_RECIPIENT == 1e18`, `MAX_BATCH_SIZE == 200`.
 - Construction sets nonzero immutable `distributor` and `recipientCap`, computes `maximumSupply = recipientCap * 1e18` (overflow-checked), and mints it to the token contract. Deployer and distributor start at zero.
 - Constructor precedence: zero distributor, token-contract distributor, zero cap, then overflow.
 - `totalSupply() == maximumSupply` forever; `totalInitialRecipients <= recipientCap`.
@@ -64,7 +64,7 @@ Bun is the sole JavaScript package manager; never use npm or pnpm, and never cre
 - The manifest and plan are **lean**: store only authoritative inputs and derive everything else (cap, maximum supply, batch split, counts) on demand. Do not reintroduce stored derived fields, per-batch or embedded self-checksums, or cross-field validation of duplicated values.
 - The recipient cap is **derived** from the final unique recipient list and must never become a caller-supplied option again: that is what makes undisclosed headroom impossible. Empty recipient lists are rejected.
 - Provenance is mandatory and never invented, defaulted, or derived. Validate its shape; do not fill it in. It is recorded and validated structurally, never independently verified.
-- `provenance.sourceChainId` (where the snapshot was read) and the plan's `targetChainId` (where MREP2 is deployed) are intentionally separate and must never be required to match: a mainnet snapshot must be able to drive a Sepolia plan.
+- `provenance.sourceChainId` (where the snapshot was read) and the plan's `targetChainId` (where CHECKAUGUR is deployed) are intentionally separate and must never be required to match: a mainnet snapshot must be able to drive a Sepolia plan.
 - Integrity is a detached hash, not a self-checksum: emit `manifest.json.sha256` and `plan.json.sha256` over the exact emitted bytes. Detached hashes detect accidental change; they do not prove approval or authenticity.
 - `ops/src/distribution-plan.ts` is offline only. It must never gain an RPC call, a signer, or an authoritative nonce, fee, or gas figure, and must not grow into a general transaction framework. It re-validates the manifest and decodes its own calldata before emitting a plan.
 - The manifest format is version 1 with no migration path: there is no production manifest requiring backward compatibility, so change the format cleanly rather than adding schema-version machinery.

@@ -1,4 +1,4 @@
-// Offline binding of an approved manifest to a deployed MREP2 candidate.
+// Offline binding of an approved manifest to a deployed CHECKAUGUR candidate.
 //
 // The token address does not exist when a recipient snapshot is prepared, so the manifest cannot
 // name it. This is the one deterministic step that binds an approved manifest to a specific
@@ -9,7 +9,7 @@
 //
 // It performs no RPC request, no signing, and no broadcasting, and reads no key or secret. It
 // records no nonce, fee, or gas: those come from live chain state under a separately authorized
-// task. `targetChainId` (where MREP2 is deployed) is intentionally independent of the manifest's
+// task. `targetChainId` (where CHECKAUGUR is deployed) is intentionally independent of the manifest's
 // `sourceChainId` (where the snapshot was read), so a mainnet snapshot can drive a Sepolia plan.
 
 import {
@@ -49,7 +49,7 @@ export interface PlanInput {
   manifest: Manifest;
   /** SHA-256 of the exact manifest.json bytes this plan is bound to. */
   manifestSha256: string;
-  /** The chain MREP2 is deployed on. May differ from the manifest's source chain. */
+  /** The chain CHECKAUGUR is deployed on. May differ from the manifest's source chain. */
   targetChainId: number;
   /** The deployed candidate token address. */
   token: string;

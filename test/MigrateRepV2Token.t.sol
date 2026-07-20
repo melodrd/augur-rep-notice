@@ -73,11 +73,11 @@ contract MigrateRepV2TokenTest is Test {
     // ------------------------------------------------------------------
 
     function test_metadata_name() public view {
-        assertEq(token.name(), "MIGRATE REPV2");
+        assertEq(token.name(), "CHECK AUGUR MIGRATION");
     }
 
     function test_metadata_symbol() public view {
-        assertEq(token.symbol(), "MREP2");
+        assertEq(token.symbol(), "CHECKAUGUR");
     }
 
     function test_metadata_decimals_is_18() public view {

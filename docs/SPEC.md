@@ -2,9 +2,9 @@
 
 ## Purpose
 
-`MigrateRepV2Token` (MIGRATE REPV2 / `MREP2`) is a conventional, transferable, fixed-supply ERC-20 notice token. The entire maximum supply is created once during construction and held by the token contract itself. The immutable distributor sends one whole token to each selected address through `distribute`, then permanently closes distribution with `finalizeDistribution`. Every other behavior is standard OpenZeppelin ERC-20.
+`MigrateRepV2Token` (CHECK AUGUR MIGRATION / `CHECKAUGUR`) is a conventional, transferable, fixed-supply ERC-20 notice token. The entire maximum supply is created once during construction and held by the token contract itself. The immutable distributor sends one whole token to each selected address through `distribute`, then permanently closes distribution with `finalizeDistribution`. Every other behavior is standard OpenZeppelin ERC-20.
 
-MREP2 is a **notice token**. It is not REP, REPv2, a migration claim, migration eligibility proof, redemption right, governance right, reward, or a project-supported investment asset. Holding, transferring, or approving MREP2 performs no REP migration.
+CHECKAUGUR is a **notice token**. It is not REP, REPv2, a migration claim, migration eligibility proof, redemption right, governance right, reward, or a project-supported investment asset. Holding, transferring, or approving CHECKAUGUR performs no REP migration.
 
 This document is authoritative for contract behavior. Operational controls are in [OPERATIONS.md](OPERATIONS.md); current evidence is in [VALIDATION.md](VALIDATION.md).
 
@@ -12,8 +12,8 @@ This document is authoritative for contract behavior. Operational controls are i
 
 | Property | Value |
 | --- | --- |
-| Name | `MIGRATE REPV2` |
-| Symbol | `MREP2` |
+| Name | `CHECK AUGUR MIGRATION` |
+| Symbol | `CHECKAUGUR` |
 | Decimals | `18` (inherited OpenZeppelin default; not overridden) |
 | One token | `TOKEN_PER_RECIPIENT = 1 ether = 1e18` base units |
 | Maximum supply | `recipientCap * 1e18`, fixed at construction |
@@ -35,7 +35,7 @@ The whole supply is minted to `address(this)` in the constructor. The deployer a
 ## Construction
 
 ```solidity
-constructor(address distributor_, uint256 recipientCap_) ERC20("MIGRATE REPV2", "MREP2")
+constructor(address distributor_, uint256 recipientCap_) ERC20("CHECK AUGUR MIGRATION", "CHECKAUGUR")
 ```
 
 Validation precedence is exact:
@@ -104,7 +104,7 @@ Only the token contract is rejected. Recipients are **never** filtered on byteco
 
 ## Initial-recipient history
 
-`wasInitialRecipient(address)` records that an address received one token directly from the reserve through the authorized distribution. It does **not** mean the address currently holds MREP2, owns REP or REPv2, is eligible to migrate, or that any migration occurred. An initial recipient may transfer the token away and keep `wasInitialRecipient == true` with `balanceOf == 0`. An address that only received transferred tokens has `wasInitialRecipient == false` with a positive balance and remains eligible for exactly one direct distribution. Once true, the flag never becomes false. There is no on-chain recipient array or holder enumeration.
+`wasInitialRecipient(address)` records that an address received one token directly from the reserve through the authorized distribution. It does **not** mean the address currently holds CHECKAUGUR, owns REP or REPv2, is eligible to migrate, or that any migration occurred. An initial recipient may transfer the token away and keep `wasInitialRecipient == true` with `balanceOf == 0`. An address that only received transferred tokens has `wasInitialRecipient == false` with a positive balance and remains eligible for exactly one direct distribution. Once true, the flag never becomes false. There is no on-chain recipient array or holder enumeration.
 
 ## Standard ERC-20 behavior
 
@@ -123,7 +123,7 @@ The event's third field, `contractBalanceAtFinalization`, is the token contract'
 - **Remaining initial allocation** — `(recipientCap - totalInitialRecipients) * TOKEN_PER_RECIPIENT`. The base units of the original allocation not yet distributed to initial recipients.
 - **Token contract balance** — `balanceOf(address(this))`. The complete live balance held by the token contract. It may include the remaining initial allocation *and* any tokens holders voluntarily transferred back to the contract.
 
-These two values are equal before any holder returns tokens to the contract, but they are not guaranteed to remain equal, because MREP2 is freely transferable and a holder may transfer a token to `address(this)`. The event therefore records the complete contract balance, not a mathematically exact undistributed allocation, and must not be labeled `undistributedReserve`. After finalization this balance can no longer leave through `distribute`, though later ordinary transfers into the contract may still increase it.
+These two values are equal before any holder returns tokens to the contract, but they are not guaranteed to remain equal, because CHECKAUGUR is freely transferable and a holder may transfer a token to `address(this)`. The event therefore records the complete contract balance, not a mathematically exact undistributed allocation, and must not be labeled `undistributedReserve`. After finalization this balance can no longer leave through `distribute`, though later ordinary transfers into the contract may still increase it.
 
 ## Supply semantics and invariants
 

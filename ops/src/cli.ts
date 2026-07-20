@@ -1,4 +1,4 @@
-// Offline MREP2 recipient tooling. One entry point, two subcommands:
+// Offline CHECKAUGUR recipient tooling. One entry point, two subcommands:
 //
 //   bun run ops -- manifest \
 //     --recipients ../data/snapshots/approved-recipients.json \
@@ -198,7 +198,7 @@ const PLAN_USAGE = `Usage:
 
 Required:
   --manifest <file>                 manifest.json produced by \`ops -- manifest\`
-  --target-chain-id <n>             chain MREP2 is deployed on (may differ from the source chain)
+  --target-chain-id <n>             chain CHECKAUGUR is deployed on (may differ from the source chain)
   --token <address>                 the deployed candidate token address
   --source-commit <sha>             40-character hex git commit SHA the candidate was built from
   --runtime-bytecode-sha256 <hash>  sha256:<64 lowercase hex> of the candidate's runtime bytecode

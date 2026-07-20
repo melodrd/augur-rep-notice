@@ -3,16 +3,16 @@ pragma solidity 0.8.36;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-/// @title MIGRATE REPV2 (MREP2) notice token
+/// @title CHECK AUGUR MIGRATION (CHECKAUGUR) notice token
 /// @notice A conventional, transferable, fixed-supply ERC-20 notice token. The entire
 ///         maximum supply is created once at construction and held by the token contract
-///         itself. The immutable distributor sends exactly one whole MREP2 token to each
+///         itself. The immutable distributor sends exactly one whole CHECKAUGUR token to each
 ///         selected address through {distribute}, then permanently closes distribution
 ///         with {finalizeDistribution}. Every other behavior is standard OpenZeppelin
 ///         ERC-20: unrestricted transfer, approve, allowance, and transferFrom.
-/// @dev MREP2 is a notice token. It is not REP, REPv2, a migration claim, migration
+/// @dev CHECKAUGUR is a notice token. It is not REP, REPv2, a migration claim, migration
 ///      eligibility proof, redemption right, governance right, reward, or a project-supported
-///      investment asset. Holding, transferring, or approving MREP2 performs no REP migration.
+///      investment asset. Holding, transferring, or approving CHECKAUGUR performs no REP migration.
 ///      There is no owner, role, pause, mint, holder burn, tax, blacklist, or upgrade surface.
 contract MigrateRepV2Token is ERC20 {
     /// @notice The amount delivered to each initial recipient: one whole token (1e18 base units).
@@ -101,7 +101,7 @@ contract MigrateRepV2Token is ERC20 {
     /// @notice Emitted once when the distributor permanently closes distribution.
     /// @param distributor The immutable distributor that finalized.
     /// @param totalInitialRecipients The permanent count of initial recipients at finalization.
-    /// @param contractBalanceAtFinalization The token contract's complete MREP2 balance when
+    /// @param contractBalanceAtFinalization The token contract's complete CHECKAUGUR balance when
     ///        distribution is finalized. This normally includes the remaining initial-distribution
     ///        allocation and may also include tokens holders transferred back to the contract, so it
     ///        is not a mathematically exact undistributed allocation. After finalization this balance
@@ -119,7 +119,7 @@ contract MigrateRepV2Token is ERC20 {
     ///        neither the zero address nor the token contract itself; any other address,
     ///        including a reviewed contract, is accepted.
     /// @param recipientCap_ The maximum number of unique initial recipients.
-    constructor(address distributor_, uint256 recipientCap_) ERC20("MIGRATE REPV2", "MREP2") {
+    constructor(address distributor_, uint256 recipientCap_) ERC20("CHECK AUGUR MIGRATION", "CHECKAUGUR") {
         if (distributor_ == address(0)) {
             revert ZeroDistributor();
         }
@@ -142,7 +142,7 @@ contract MigrateRepV2Token is ERC20 {
         _mint(address(this), supply);
     }
 
-    /// @notice Sends exactly one whole MREP2 token from the reserve to each recipient.
+    /// @notice Sends exactly one whole CHECKAUGUR token from the reserve to each recipient.
     /// @dev Only the distributor may call this, only before finalization. The whole batch is
     ///      atomic: any invalid recipient reverts all prior mapping writes, balance changes,
     ///      events, and counter updates in the call. Duplicates within the batch and addresses

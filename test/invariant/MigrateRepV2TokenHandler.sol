@@ -10,7 +10,7 @@ import {MigrateRepV2Token} from "../../src/MigrateRepV2Token.sol";
 ///      contract itself, so the invariant suite can reconcile the full balance set.
 ///      Every action guards its preconditions so the handler never reverts.
 ///
-///      Transfers and approved transferFrom operations may target `address(token)`. MREP2 is
+///      Transfers and approved transferFrom operations may target `address(token)`. CHECKAUGUR is
 ///      freely transferable, so any holder may send tokens back to the token contract, and the
 ///      invariants must model that rather than assume the contract balance is only the
 ///      undistributed initial allocation. Returned tokens are tracked in
@@ -89,7 +89,7 @@ contract MigrateRepV2TokenHandler is Test {
     }
 
     /// @param toContract When true the destination is the token contract itself, modelling a
-    ///        holder returning MREP2 to `address(token)`.
+    ///        holder returning CHECKAUGUR to `address(token)`.
     function transfer(uint256 fromIdx, uint256 toIdx, uint256 amount, bool toContract) external {
         address from = actors[fromIdx % ACTOR_COUNT];
         address to = toContract ? address(token) : actors[toIdx % ACTOR_COUNT];

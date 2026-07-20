@@ -1,6 +1,6 @@
 # Deployment
 
-Release procedure for `MigrateRepV2Token` (MREP2). Contract behavior is defined in [SPEC.md](SPEC.md); validation evidence is in [VALIDATION.md](VALIDATION.md); recipient preparation and distribution are in [OPERATIONS.md](OPERATIONS.md).
+Release procedure for `MigrateRepV2Token` (CHECKAUGUR). Contract behavior is defined in [SPEC.md](SPEC.md); validation evidence is in [VALIDATION.md](VALIDATION.md); recipient preparation and distribution are in [OPERATIONS.md](OPERATIONS.md).
 
 This document assumes familiarity with Ethereum, Foundry, RPC endpoints, contract verification, and hardware-wallet or multisig signing. It covers a single production deployment: one `CREATE` of one token contract. It authorizes nothing on its own — signing and broadcasting are performed by a human under a separate, explicitly approved task.
 
@@ -26,7 +26,7 @@ distributor        constructor argument; sole address that may distribute or fin
 recipientCap       constructor argument; maximum unique initial recipients
 maximumSupply      derived: recipientCap * 1e18, minted once to the token contract
 contract bytecode  fixed by source + compiler settings + dependency pins
-token metadata     name "MIGRATE REPV2", symbol "MREP2", decimals 18
+token metadata     name "CHECK AUGUR MIGRATION", symbol "CHECKAUGUR", decimals 18
 ```
 
 `distributor` and `recipientCap` are the only two inputs the operator supplies. Everything else is fixed by the source. The deploying account — the keystore account that signs the `CREATE`, chosen with `--account` — is a separate decision from `distributor`: the two may be the same address but need not be, and deploying by itself confers no distribution authority, only what the constructor assigns to `distributor`.
@@ -104,8 +104,8 @@ Read the live contract directly and confirm each value before treating the deplo
 
 | Getter | Expected |
 | --- | --- |
-| `name()` | `MIGRATE REPV2` |
-| `symbol()` | `MREP2` |
+| `name()` | `CHECK AUGUR MIGRATION` |
+| `symbol()` | `CHECKAUGUR` |
 | `decimals()` | `18` |
 | `TOKEN_PER_RECIPIENT()` | `1000000000000000000` |
 | `MAX_BATCH_SIZE()` | `200` |

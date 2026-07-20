@@ -1,8 +1,8 @@
-# MIGRATE REPV2 (MREP2)
+# CHECK AUGUR MIGRATION (CHECKAUGUR)
 
-MIGRATE REPV2 (MREP2) is a fixed-supply ERC-20 notice token. One token is distributed to each selected address. MREP2 does not perform REP migration or grant any claim, redemption, governance, or financial right.
+CHECK AUGUR MIGRATION (CHECKAUGUR) is a fixed-supply ERC-20 notice token. One token is distributed to each selected address. CHECKAUGUR does not perform REP migration or grant any claim, redemption, governance, or financial right.
 
-Receiving MREP2 requires no action — no wallet connection, approval, swap, bridge, claim, or payment. It is a conventional ERC-20 with no owner, roles, taxes, blacklist, pause, upgradeability, holder burn, or post-deployment minting. The authoritative behavioral contract is [docs/SPEC.md](docs/SPEC.md).
+Receiving CHECKAUGUR requires no action — no wallet connection, approval, swap, bridge, claim, or payment. It is a conventional ERC-20 with no owner, roles, taxes, blacklist, pause, upgradeability, holder burn, or post-deployment minting. The authoritative behavioral contract is [docs/SPEC.md](docs/SPEC.md).
 
 ## Contract model
 
@@ -13,11 +13,11 @@ Receiving MREP2 requires no action — no wallet connection, approval, swap, bri
 - **Batched distribution.** `distribute(address[])` sends one token per new recipient in atomic batches of at most `MAX_BATCH_SIZE = 200`, rejecting the zero address, the token contract, and duplicates, until the cap is reached or distribution is finalized.
 - **Irreversible finalization.** `finalizeDistribution` permanently closes distribution; ordinary `transfer`, `approve`, and `transferFrom` continue unchanged.
 
-Because MREP2 is freely transferable, holders may send tokens back to the contract. Its live balance is therefore the remaining initial allocation *plus* any returned tokens; only the former is predictable off-chain, and no path recovers returned tokens.
+Because CHECKAUGUR is freely transferable, holders may send tokens back to the contract. Its live balance is therefore the remaining initial allocation *plus* any returned tokens; only the former is predictable off-chain, and no path recovers returned tokens.
 
 | Property | Value |
 | --- | --- |
-| Name / symbol / decimals | `MIGRATE REPV2` / `MREP2` / `18` |
+| Name / symbol / decimals | `CHECK AUGUR MIGRATION` / `CHECKAUGUR` / `18` |
 | Token per recipient | `1e18` base units (one token) |
 | Maximum supply | `recipientCap * 1e18`, fixed at construction |
 

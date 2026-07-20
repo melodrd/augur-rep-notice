@@ -1,7 +1,7 @@
-// Deterministic recipient-manifest tooling for MigrateRepV2Token (MREP2).
+// Deterministic recipient-manifest tooling for MigrateRepV2Token (CHECKAUGUR).
 //
 // A manifest is an offline, human-approved artifact: the exact set of addresses that will each
-// receive one MREP2 token, plus the provenance of how that set was chosen. The contract never
+// receive one CHECKAUGUR token, plus the provenance of how that set was chosen. The contract never
 // reads it. It exists so the recipient list can be reviewed, checksummed, and frozen before any
 // deployment, and so the deployed cap is derived from the list rather than chosen with headroom.
 //
@@ -13,7 +13,7 @@
 
 import { getAddress, isAddress } from "viem";
 
-/** One whole MREP2 token in base units (18 decimals). */
+/** One whole CHECKAUGUR token in base units (18 decimals). */
 export const TOKEN_PER_RECIPIENT = 1_000_000_000_000_000_000n;
 
 /** Hard on-chain per-call recipient ceiling; the batch size must not exceed it. */
@@ -39,7 +39,7 @@ const DECIMAL = /^(0|[1-9][0-9]*)$/;
  * it, and cannot confirm it describes a real snapshot.
  *
  * `sourceChainId` is the chain the snapshot was read from. It is deliberately independent of the
- * plan's `targetChainId` (where MREP2 is deployed): a mainnet snapshot may drive a Sepolia
+ * plan's `targetChainId` (where CHECKAUGUR is deployed): a mainnet snapshot may drive a Sepolia
  * rehearsal, so the two are never required to match.
  *
  * Large integers are strings because JSON numbers cannot safely carry them.
