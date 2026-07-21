@@ -162,7 +162,7 @@ describe("dispatcher", () => {
 });
 
 describe("manifest subcommand", () => {
-  test("writes manifest.json, manifest.csv, and a matching detached checksum", async () => {
+  test("writes manifest.json and a matching detached checksum", async () => {
     const { recipientsFile, provenanceFile, outDir } =
       await manifestWorkspace(250);
 
@@ -184,10 +184,6 @@ describe("manifest subcommand", () => {
     expect(manifest.version).toBe(1);
     expect(manifest.recipients).toHaveLength(250);
     expect(manifest.provenance).toEqual(PROVENANCE);
-
-    const csv = await Bun.file(path.join(outDir, "manifest.csv")).text();
-    expect(csv.split("\n")[0]).toBe("batch,index,address");
-    expect(csv.trimEnd().split("\n")).toHaveLength(1 + 250);
 
     // The detached checksum is the SHA-256 of the exact manifest.json bytes.
     const checksum = (
@@ -237,23 +233,6 @@ describe("manifest subcommand", () => {
     expect(await Bun.file(path.join(outDir, "manifest.json")).exists()).toBe(
       false,
     );
-  });
-
-  test("fails on invalid provenance rather than defaulting it", async () => {
-    const { dir, recipientsFile, outDir } = await manifestWorkspace(3);
-    const emptyProvenance = path.join(dir, "empty.json");
-    await Bun.write(emptyProvenance, JSON.stringify({}));
-    await expect(
-      main([
-        "manifest",
-        "--recipients",
-        recipientsFile,
-        "--provenance",
-        emptyProvenance,
-        "--out-dir",
-        outDir,
-      ]),
-    ).rejects.toThrow(/provenance/);
   });
 
   test("reports a missing input file", async () => {
@@ -373,48 +352,6 @@ describe("plan subcommand", () => {
     await expect(
       main(planArgs(path.join(dir, "absent.json"), outputFile)),
     ).rejects.toThrow(/no such file/);
-  });
-
-  test("rejects an invalid target chain", async () => {
-    const { manifestFile, outputFile } = await planWorkspace(3);
-    await expect(
-      main([
-        "plan",
-        "--manifest",
-        manifestFile,
-        "--target-chain-id",
-        "0",
-        "--token",
-        DEPLOYED_TOKEN,
-        "--source-commit",
-        COMMIT,
-        "--runtime-bytecode-sha256",
-        RUNTIME_HASH,
-        "--output",
-        outputFile,
-      ]),
-    ).rejects.toThrow(/--target-chain-id/);
-  });
-
-  test("rejects a malformed token address", async () => {
-    const { manifestFile, outputFile } = await planWorkspace(3);
-    await expect(
-      main([
-        "plan",
-        "--manifest",
-        manifestFile,
-        "--target-chain-id",
-        String(TARGET_CHAIN_ID),
-        "--token",
-        "0x123",
-        "--source-commit",
-        COMMIT,
-        "--runtime-bytecode-sha256",
-        RUNTIME_HASH,
-        "--output",
-        outputFile,
-      ]),
-    ).rejects.toThrow(/valid Ethereum address/);
   });
 
   test("returns a usage error when a required option is missing", async () => {

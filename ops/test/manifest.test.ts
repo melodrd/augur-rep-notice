@@ -5,7 +5,6 @@ import {
   type Manifest,
   MANIFEST_VERSION,
   MAX_BATCH_SIZE,
-  manifestToCsv,
   manifestToJson,
   maximumSupply,
   normalizeRecipients,
@@ -260,19 +259,6 @@ describe("serialization", () => {
     ]) {
       expect(parsed).not.toHaveProperty(derived);
     }
-  });
-
-  test("CSV lists exactly one row per recipient", () => {
-    const manifest = build(
-      Array.from({ length: 3 }, (_, i) => addr(i + 1)),
-      2,
-    );
-    const csv = manifestToCsv(manifest);
-    const lines = csv.trimEnd().split("\n");
-    expect(lines[0]).toBe("batch,index,address");
-    expect(lines).toHaveLength(1 + 3); // header + one row per recipient
-    expect(lines[1]).toBe(`1,1,${manifest.recipients[0]}`);
-    expect(lines[3]).toBe(`2,3,${manifest.recipients[2]}`);
   });
 });
 

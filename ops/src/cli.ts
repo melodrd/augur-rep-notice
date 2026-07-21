@@ -36,7 +36,6 @@ import {
 import {
   buildManifest,
   type Manifest,
-  manifestToCsv,
   manifestToJson,
   MAX_BATCH_SIZE,
   maximumSupply,
@@ -61,7 +60,7 @@ const MANIFEST_USAGE = `Usage:
 Required:
   --recipients <file>   JSON: an array of addresses, or { "recipients": [...] }
   --provenance <file>   JSON: the approved provenance object
-  --out-dir <dir>       directory to write manifest.json, manifest.csv, manifest.json.sha256
+  --out-dir <dir>       directory to write manifest.json and manifest.json.sha256
 
 Options:
   --batch-size <n>      batch size, 1..${MAX_BATCH_SIZE} (default 100)
@@ -172,21 +171,17 @@ async function runManifest(argv: readonly string[]): Promise<number> {
   const json = manifestToJson(manifest);
   const checksum = sha256(json);
   const jsonPath = path.join(outDir, "manifest.json");
-  const csvPath = path.join(outDir, "manifest.csv");
   const checksumPath = path.join(outDir, "manifest.json.sha256");
 
   await writeFiles(
     [
       { path: jsonPath, contents: json },
-      { path: csvPath, contents: manifestToCsv(manifest) },
       { path: checksumPath, contents: `${checksum}\n` },
     ],
     values.force === true,
   );
 
-  console.log(
-    summarizeManifest(manifest, checksum, [jsonPath, csvPath, checksumPath]),
-  );
+  console.log(summarizeManifest(manifest, checksum, [jsonPath, checksumPath]));
   return 0;
 }
 

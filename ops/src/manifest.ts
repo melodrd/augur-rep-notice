@@ -365,16 +365,3 @@ export function splitBatches(manifest: Manifest): Batch[] {
 export function manifestToJson(manifest: Manifest): string {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
-
-/** Reviewable CSV: exactly one row per recipient, with the derived batch number and 1-based index. */
-export function manifestToCsv(manifest: Manifest): string {
-  const rows = ["batch,index,address"];
-  let index = 0;
-  for (const batch of splitBatches(manifest)) {
-    for (const address of batch.recipients) {
-      index += 1;
-      rows.push(`${batch.number},${index},${address}`);
-    }
-  }
-  return `${rows.join("\n")}\n`;
-}
