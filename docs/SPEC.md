@@ -6,7 +6,7 @@
 
 CHECKAUGUR is a **notice token**. It is not REP, REPv2, a migration claim, migration eligibility proof, redemption right, governance right, reward, or a project-supported investment asset. Holding, transferring, or approving CHECKAUGUR performs no REP migration.
 
-This document is authoritative for contract behavior. Operational controls are in [OPERATIONS.md](OPERATIONS.md); current evidence is in [VALIDATION.md](VALIDATION.md).
+This document is authoritative for contract behavior. Deployment and operational controls are in [OPERATIONS.md](OPERATIONS.md).
 
 ## Fixed metadata
 

@@ -1,8 +1,14 @@
 # CHECK AUGUR MIGRATION (CHECKAUGUR)
 
-CHECK AUGUR MIGRATION (CHECKAUGUR) is a fixed-supply ERC-20 notice token. One token is distributed to each selected address. CHECKAUGUR does not perform REP migration or grant any claim, redemption, governance, or financial right.
+CHECK AUGUR MIGRATION (CHECKAUGUR) is a fixed-supply ERC-20 **notice token**. One token is distributed to each selected address. CHECKAUGUR does **not** perform REP migration or grant any claim, redemption, governance, or financial right. It is not REP, REPv2, a migration claim, migration eligibility, or a project-supported investment asset.
 
-Receiving CHECKAUGUR requires no action — no wallet connection, approval, swap, bridge, claim, or payment. It is a conventional ERC-20 with no owner, roles, taxes, blacklist, pause, upgradeability, holder burn, or post-deployment minting. The authoritative behavioral contract is [docs/SPEC.md](docs/SPEC.md).
+It is a conventional ERC-20 with no owner, roles, taxes, blacklist, pause, upgradeability, holder burn, or post-deployment minting. The authoritative behavioral contract is [docs/SPEC.md](docs/SPEC.md).
+
+## If you received CHECKAUGUR
+
+Receiving it **requires no action** — no wallet connection, approval, swap, bridge, claim, or payment. Do not approve, transfer, swap, bridge, claim, deposit, sign, or connect a wallet because of it. Reach any website by navigating there yourself, never by following a link from a token, message, or search result. Any market price is third-party and implies no project endorsement.
+
+A specific deployment is identified only by its verified, checksummed contract address and that address's on-chain source verification — never by matching name, symbol, logo, or price.
 
 ## Contract model
 
@@ -21,31 +27,6 @@ Because CHECKAUGUR is freely transferable, holders may send tokens back to the c
 | Token per recipient | `1e18` base units (one token) |
 | Maximum supply | `recipientCap * 1e18`, fixed at construction |
 
-## Readiness
-
-Passing tests make the code ready, not the release. These are distinct:
-
-| Stage | Status |
-| --- | --- |
-| **Code readiness** — contract and tooling satisfy the specification and validation gates | Met at `3ae5d82` |
-| **Recipient-policy readiness** — approved eligibility policy, frozen source data, approved manifest, exact derived cap | Not started |
-| **Operational readiness** — selected production distributor and a successful rehearsal | Not started |
-| **Mainnet readiness** — all of the above plus approved deployment parameters | Not met |
-
-At `3ae5d82`, on the pinned toolchain, 122 Forge tests and 70 TypeScript tests pass, production coverage is 100% of lines, statements, branches, and functions, the deep fuzz/invariant profile passes with zero reverts, and Slither reports no findings. This is evidence about tested behavior, not an audit. No production deployment exists, and no task in this repository authorizes RPC access, key handling, signing, verification, or broadcast. Details are in [docs/VALIDATION.md](docs/VALIDATION.md).
-
-## Documents
-
-| Document | Contents |
-| --- | --- |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Mainnet operator runbook: copy-paste commands from approved list to finalization |
-| [docs/SPEC.md](docs/SPEC.md) | Authoritative contract behavior |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Release procedure and post-deployment verification |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Recipient policy, distribution, reconciliation, finalization |
-| [docs/VALIDATION.md](docs/VALIDATION.md) | Reproducible local evidence |
-| [docs/TESTS.md](docs/TESTS.md) | Test categories and what each protects |
-| [docs/COMMUNICATIONS.md](docs/COMMUNICATIONS.md) | Explorer/wallet metadata and user messaging |
-
 ## Repository map
 
 | Path | Contents |
@@ -54,8 +35,10 @@ At `3ae5d82`, on the pinned toolchain, 122 Forge tests and 70 TypeScript tests p
 | `script/DeployMigrateRepV2Token.s.sol` | Deployment script (embeds no account, key, RPC, or network) |
 | `test/` | Unit, fuzz, invariant, gas, and deploy-script suites |
 | `ops/` | Offline recipient tooling: manifest and distribution-plan CLI |
+| [docs/SPEC.md](docs/SPEC.md) | Authoritative contract behavior |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Mainnet operator guide: deploy, distribute, finalize |
 
-## Commands
+## Build and test
 
 ```bash
 git submodule update --init --recursive
@@ -67,4 +50,6 @@ make coverage     # production coverage
 make gas          # isolated gas measurements
 ```
 
-The canonical build uses Solidity 0.8.36, EVM Osaka, optimizer enabled at 200 runs, via-IR disabled, and pinned OpenZeppelin Contracts v5.6.1. Deployment and distribution procedures live in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md); this README does not duplicate them. Operators running a mainnet release start at [docs/RUNBOOK.md](docs/RUNBOOK.md), the condensed copy-paste path that ties those two documents together.
+The canonical build uses Solidity 0.8.36, EVM Osaka, optimizer enabled at 200 runs, via-IR disabled, and pinned OpenZeppelin Contracts v5.6.1.
+
+Passing tests make the code ready, not the release. On the pinned toolchain the suites pass with 100% production-code coverage, the deep fuzz/invariant profile reverts zero times, and Slither reports no findings. **This is evidence about tested behavior, not an audit.** No production deployment exists, and no task in this repository authorizes RPC access, key handling, signing, verification, or broadcast. The mainnet release is gated on an independent review of the final source, dependency pin, and recipient manifest — see [docs/OPERATIONS.md](docs/OPERATIONS.md).
