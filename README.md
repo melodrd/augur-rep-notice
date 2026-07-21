@@ -36,7 +36,7 @@ Because CHECKAUGUR is freely transferable, holders may send tokens back to the c
 | `test/` | Unit, fuzz, invariant, gas, and deploy-script suites |
 | `ops/` | Offline recipient tooling: manifest and distribution-plan CLI |
 | [docs/SPEC.md](docs/SPEC.md) | Authoritative contract behavior |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Mainnet operator guide: deploy, distribute, finalize |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Operator guide: provenance, manifest, deploy, distribute, finalize (mainnet and Sepolia rehearsal) |
 
 ## Build and test
 

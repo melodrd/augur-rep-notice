@@ -1,245 +1,215 @@
-# Mainnet Operator Guide
+# Operator Guide
 
-The whole path from an approved recipient list to a finalized distribution of `MigrateRepV2Token` (CHECKAUGUR) on **Ethereum mainnet**, as copy-paste commands with the rationale and stop conditions inline. Contract behavior is defined in [SPEC.md](SPEC.md); this guide is authoritative for how it is deployed and operated.
+The full path from an approved recipient list to a finalized `MigrateRepV2Token` (CHECKAUGUR) distribution, as copy-paste commands. Contract behavior is defined in [SPEC.md](SPEC.md); this guide governs how it is deployed and operated.
 
-Two rules override everything below:
+**Two rules override everything here:**
 
-1. **A human signs every transaction.** The repository tooling is offline: it never holds a key, reaches the network, or broadcasts. Signing and broadcasting happen under a separate, explicitly approved human task.
-2. **Immutable values are permanent.** A wrong `distributor`, `recipientCap`, chain, or token address cannot be edited — the only fix is discarding the deployment and redoing it.
+1. **A human signs every transaction.** The repository tooling is offline — it never holds a key, reaches the network, or broadcasts.
+2. **Immutable values are permanent.** A wrong `distributor`, `recipientCap`, chain, or token address cannot be edited — the only fix is to redeploy.
 
-When anything fails to match an approved value, **stop**; do not work around it. This guide assumes familiarity with Ethereum, Foundry, RPC endpoints, contract verification, and hardware-wallet or multisig signing.
+Before any **mainnet** deployment, an independent reviewer must inspect the final source, dependency pin, constructor arguments, and recipient manifest. Passing tests are not an audit. This guide assumes familiarity with Foundry, RPC endpoints, verification, and keystore/hardware-wallet signing.
 
-## Release readiness
+## Before you sign anything
 
-Code readiness (the contract and tooling satisfy their specification, with passing tests and a clean Slither run) is separate from release readiness. Before any mainnet transaction is prepared, every item must hold:
+These are irreversible. Read them before the first transaction.
 
-- source frozen at a reviewed commit with a clean working tree, and `make check`, `make check-deep`, `make coverage`, and `make gas` passing on it;
-- an **independent Solidity reviewer** has inspected the final source, the OpenZeppelin pin, the supply and distribution model, ABI, storage layout, constructor arguments, and the final manifest and provenance (passing tests are not an audit);
-- a recipient manifest approved under [Recipient policy](#recipient-policy) below, with its exact derived `recipientCap`;
-- the production `distributor` selected and confirmed to be neither the zero address nor the predicted token address;
-- the deployment account funded and controlled by the project owner;
-- compiler, EVM target, optimizer, and dependency pins reviewed against `foundry.toml` and `foundry.lock`;
-- the target chain confirmed to be at or past the EVM version in `foundry.toml` (`osaka`).
+- **The supply is fixed at deploy and can never change.** `recipientCap × 1e18` is minted once, in the constructor, to the token contract itself. There is no mint, burn, owner, pause, or upgrade — nothing can alter the supply, the cap, or the rules afterward.
+- **`distributor` and `recipientCap` are immutable.** Set in the constructor, never editable. A wrong value means you **discard the contract and redeploy** — there is no other fix.
+- **Distribution is batched and one-way.** The distributor sends exactly one token to each address via `distribute(address[])`, in batches of at most 200 (use ~100). The on-chain recipient count accumulates across calls and stops at `recipientCap`. Tokens leave the contract only through `distribute`.
+- **Finalizing is permanent.** `finalizeDistribution` closes distribution forever. Any tokens not yet sent are **locked permanently** — no recovery exists. **Send every batch first; finalize last.**
+
+## How it works
+
+- The whole supply is minted to the contract at deploy. The deployer and distributor receive nothing.
+- Each address gets exactly one token, once. The zero address, the token's own address, and duplicates are rejected; a batch is atomic — any bad entry reverts the whole call.
+- `wasInitialRecipient(addr)` records who received an initial token. It is history, not a balance or a claim.
+- Ordinary ERC-20 `transfer` / `approve` / `transferFrom` work normally, before and after finalize. `totalSupply` never changes.
+- Fixed forever at deploy: name `CHECK AUGUR MIGRATION`, symbol `CHECKAUGUR`, decimals `18`, supply, `distributor`, `recipientCap`.
+
+## Networks
+
+Same steps for both; only three values differ.
+
+| | Mainnet | Sepolia rehearsal |
+| --- | --- | --- |
+| `RPC` | your mainnet endpoint | your Sepolia endpoint |
+| `CHAIN_ID` | `1` | `11155111` |
+| plan `--target-chain-id` | `1` | `11155111` |
+
+A rehearsal still distributes the real mainnet snapshot, so `provenance.sourceChainId` stays `1`.
 
 ## Setup
 
 ```bash
-export MAINNET_RPC_URL="https://..."     # your mainnet endpoint (keep out of tracked files)
-export ETHERSCAN_API_KEY="..."           # explorer verification key
-export ACCOUNT="mrep2-deployer"          # a Foundry keystore account name
+export RPC="https://..."          # mainnet or Sepolia endpoint (keep out of tracked files)
+export CHAIN_ID=1                 # 11155111 for a Sepolia rehearsal
+export ETHERSCAN_API_KEY="..."    # verification key (optional on testnet)
+export ACCOUNT="mrep2-deployer"   # a Foundry keystore account name
+
+cast wallet import "$ACCOUNT" --interactive   # key entered at a hidden prompt, never on the CLI
+cast chain-id --rpc-url "$RPC"                 # MUST print $CHAIN_ID
 ```
 
-`MAINNET_RPC_URL` and `ETHERSCAN_API_KEY` are secret-adjacent: keep them in the shell or a git-ignored `.env`, never in a tracked file. No private key, mnemonic, or keystore password is ever placed in the environment — signing is supplied through Foundry's keystore. Import the signing key once (entered at a hidden prompt, never on the command line):
+Signing is supplied only through Foundry's keystore (`--account`). No private key, mnemonic, or password ever goes in a file, env var, or command.
+
+## Deploy and distribute
+
+### 0 · Freeze the build
 
 ```bash
-cast wallet import "$ACCOUNT" --interactive
-cast chain-id --rpc-url "$MAINNET_RPC_URL"     # must print 1 before anything else
+forge clean && forge build && make check     # gate: fmt, lint, tests, ops-check, Slither
+git rev-parse HEAD                            # record this commit; the plan binds to it
 ```
 
-## 0 · Freeze the build
+### 1 · Provenance — how the list was chosen
+
+Records the snapshot's origin. The tool validates **shape, not truth**, so it is never hand-edited. Supply two files to hash: the frozen snapshot export and a written ruleset.
 
 ```bash
-forge clean && forge build
-git rev-parse HEAD          # record this commit; the plan binds to it later
-make check                  # gate: fmt, lint, tests, ops-check, Slither, consistency
+BLOCK=<snapshot block number>
+
+jq -n \
+  --argjson sourceChainId 1 \
+  --arg snapshotBlockNumber "$BLOCK" \
+  --arg snapshotBlockHash   "$(cast block "$BLOCK" -f hash --rpc-url "$SNAPSHOT_RPC")" \
+  --arg sourceDataSha256    "sha256:$(sha256sum <frozen-snapshot-export> | cut -d' ' -f1)" \
+  --arg rulesetId           "rep-notice-v1" \
+  --arg rulesetSha256       "sha256:$(sha256sum <ruleset-file> | cut -d' ' -f1)" \
+  '{
+    sourceChainId: $sourceChainId,
+    snapshotBlockNumber: $snapshotBlockNumber,
+    snapshotBlockHash: $snapshotBlockHash,
+    sourceContracts: ["0x1985365e9f78359a9B6AD760e32412f4a445E862","0x221657776846890989a759BA2973e427DfF5C9bB"],
+    sourceDataSha256: $sourceDataSha256,
+    rulesetId: $rulesetId,
+    rulesetSha256: $rulesetSha256
+  }' > data/snapshots/approved-provenance.json
 ```
 
-Optionally record the build identity. Every bytecode hash here is taken over the **raw decoded bytes**, not the printed hex string (`cut -c3-` strips `0x`, `xxd -r -p` decodes to bytes); hashing the hex text yields a different, non-comparable digest.
+`SNAPSHOT_RPC` is the snapshot's chain (mainnet, chain `1`) — for a Sepolia rehearsal this is a mainnet endpoint, **not** `$RPC`. Each field is validated: `snapshotBlockNumber` a positive integer string, `snapshotBlockHash` `0x`+64 hex, the two `sha256:` fields `sha256:`+64 lowercase hex, `sourceContracts` non-empty and unique.
 
-```bash
-forge inspect MigrateRepV2Token bytecode | cut -c3- | xxd -r -p | sha256sum   # creation bytecode; stable build id
-```
-
-## Recipient policy
-
-Recipient selection is a **human policy decision**, not a repository decision, and no tool makes it. This repository validates, normalizes, checksums, and packages an approved list; approving the eligibility policy that produces it is the project owner's alone. Taking every address from an explorer holder list is not an approved methodology — a holder snapshot silently mixes exchanges, bridges, contracts, and dust, records no rules, and cannot be reproduced.
-
-Each of the following must be settled and recorded in writing before any manifest is production data. None of the address classes (EOAs, smart wallets, exchanges, custodians, bridges, escrow, wrappers, protocol contracts, dead addresses) is automatically valid or invalid — each needs a recorded decision with a reason. Do **not** resolve this on-chain with a `code.length` filter: a contract recipient may be legitimate, and bytecode presence does not identify who controls an address. The contract rejects only the zero address and the token contract itself.
-
-```text
-source chain(s) and REP/REPv2 contract addresses
-snapshot block number and hash
-whether already-migrated addresses are included
-minimum balance / dust threshold
-treatment of exchanges, custodians, bridges, escrow, wrappers, protocol contracts
-treatment of smart wallets, multisignatures, burn/dead addresses, project-controlled contracts
-deduplication across sources
-manual-review requirements
-final inclusion and exclusion approval
-```
-
-Retain, per decision: the address, its raw source balance (integer base units), a stable reason code, and a source reference — no personal information.
-
-## 1 · Provenance — record how the list was chosen
-
-Fill [../data/snapshots/approved-provenance.json](../data/snapshots/approved-provenance.json), replacing every `REPLACE_...` placeholder. The tool checks *shape*, not truth — only you can attest the snapshot is real.
-
-```bash
-cast block <SNAPSHOT_BLOCK_NUMBER> -f hash --rpc-url "$MAINNET_RPC_URL"                  # snapshotBlockHash
-printf 'sha256:%s\n' "$(sha256sum <frozen-snapshot-export> | cut -d' ' -f1)"             # sourceDataSha256
-printf 'sha256:%s\n' "$(sha256sum <ruleset-file> | cut -d' ' -f1)"                       # rulesetSha256
-```
-
-`provenance.sourceChainId` (where the snapshot was read) is intentionally independent of the plan's `targetChainId` (where CHECKAUGUR is deployed) — a mainnet snapshot may drive a Sepolia rehearsal, so the two are never required to match.
-
-## 2 · Manifest — freeze the set and derive the cap
-
-The manifest is the offline, human-approved recipient artifact: the exact set of addresses that will each receive one token, plus provenance. It is lean — it stores only authoritative inputs and derives the cap, supply, and batch split on demand. The contract never reads it; the only value that crosses into the contract is the derived cap, copied by hand into `MREP2_RECIPIENT_CAP`.
-
-Put the addresses in `data/snapshots/approved-recipients.json` (a JSON array, or `{ "recipients": [...] }`), then:
+### 2 · Manifest — freeze the set, derive the cap
 
 ```bash
 cd ops && bun run ops -- manifest \
   --recipients ../data/snapshots/approved-recipients.json \
   --provenance ../data/snapshots/approved-provenance.json \
-  --batch-size 100 \
-  --out-dir ../data/batches/candidate-1 && cd ..
+  --batch-size 100 --out-dir ../data/batches/candidate-1 && cd ..
 ```
 
-This validates every address, rejects the zero address / duplicates / an empty list, normalizes to EIP-55, sorts ascending, and writes `manifest.json` + `manifest.json.sha256`. The cap is **derived** (it equals the unique recipient count; no cap can be supplied, so a manifest cannot carry undisclosed headroom). Regenerate from frozen inputs; never hand-edit a production manifest. The contract hard limit is 200 per call; use ~100 (≤150) for easier review.
-
-**Record the printed `recipients (derived cap)` value** — that exact number becomes `MREP2_RECIPIENT_CAP`, never rounded up or given headroom.
+Validates, dedupes, checksums, and sorts the list. **The cap is derived — it equals the unique recipient count and cannot be supplied.** Copy the printed value exactly, never rounded up:
 
 ```bash
-export MREP2_RECIPIENT_CAP="<derived cap from the line above>"
+export MREP2_RECIPIENT_CAP="<derived cap>"
 ```
 
-## 3 · Deploy — one `CREATE`
+### 3 · Deploy — one CREATE (and your gas estimate)
 
-The two constructor arguments (`MREP2_DISTRIBUTOR`, `MREP2_RECIPIENT_CAP`) are the only inputs the operator supplies; everything else is fixed by the source. The deploying account (`--account`) is a separate decision from `distributor`: they may be the same address but need not be, and deploying grants no distribution authority beyond what the constructor assigns.
+The two constructor args are the only inputs you supply. **Simulate first — it prints your gas and ETH cost.**
 
 ```bash
 export MREP2_DISTRIBUTOR="0x..."     # sole address that may distribute/finalize; immutable
 
-# Simulate (no broadcast). --account must equal the broadcast account so the predicted
-# CREATE address and nonce match what actually deploys. No key is used, nothing is sent.
+# Simulate: no broadcast, no key. Prints "Estimated amount required: X ETH".
 forge script script/DeployMigrateRepV2Token.s.sol:DeployMigrateRepV2Token \
-  --rpc-url "$MAINNET_RPC_URL" --account "$ACCOUNT" -vvvv
+  --rpc-url "$RPC" --account "$ACCOUNT" -vvvv
 
-# Broadcast + verify. The key is supplied by the keystore, never on the CLI.
+# Broadcast + verify (key supplied by the keystore, never on the CLI):
 forge script script/DeployMigrateRepV2Token.s.sol:DeployMigrateRepV2Token \
-  --rpc-url "$MAINNET_RPC_URL" --account "$ACCOUNT" --broadcast --verify
+  --rpc-url "$RPC" --account "$ACCOUNT" --broadcast --verify
+
+export TOKEN="0x..."     # deployed address from the logs
 ```
 
-Confirm the logged `distributor`, `recipientCap`, and `maximumSupply` equal the approved values, then record the deployed address:
+Confirm the logged `distributor`, `recipientCap`, and `maximumSupply` equal the approved values before continuing.
+
+### 4 · Post-deploy checks — all must match
 
 ```bash
-export TOKEN="0x..."     # the deployed token address
+cast call "$TOKEN" "distributor()(address)"              --rpc-url "$RPC"   # approved distributor
+cast call "$TOKEN" "recipientCap()(uint256)"             --rpc-url "$RPC"   # approved cap
+cast call "$TOKEN" "totalSupply()(uint256)"              --rpc-url "$RPC"   # cap * 1e18
+cast call "$TOKEN" "balanceOf(address)(uint256)" "$TOKEN" --rpc-url "$RPC"  # == totalSupply
+cast call "$TOKEN" "totalInitialRecipients()(uint256)"   --rpc-url "$RPC"   # 0
+cast call "$TOKEN" "distributionFinalized()(bool)"       --rpc-url "$RPC"   # false
 ```
 
-Verification uses compiler `0.8.36`, optimizer enabled at 200 runs, via-ir disabled, evm `osaka`, and constructor args `abi.encode(distributor, recipientCap)`. `--verify` submits these automatically when `ETHERSCAN_API_KEY` is set. Because the contract has immutables, the explorer's source verification (which reconstructs immutables from metadata) is the authoritative match; a raw `sha256` of on-chain runtime code will **not** equal the zeroed-immutable `deployedBytecode` artifact hash.
+Also confirm `name` / `symbol` / `decimals` are `CHECK AUGUR MIGRATION` / `CHECKAUGUR` / `18`. Any mismatch on an immutable ⇒ discard and redeploy.
 
-## 4 · Post-deploy checks — every value must match
+### 5 · Plan — bind the manifest to the deployed token
 
-Any mismatch is a stop condition; a wrong immutable means discard and redeploy.
-
-```bash
-cast call "$TOKEN" "name()(string)"                      --rpc-url "$MAINNET_RPC_URL"   # CHECK AUGUR MIGRATION
-cast call "$TOKEN" "symbol()(string)"                    --rpc-url "$MAINNET_RPC_URL"   # CHECKAUGUR
-cast call "$TOKEN" "decimals()(uint8)"                   --rpc-url "$MAINNET_RPC_URL"   # 18
-cast call "$TOKEN" "distributor()(address)"              --rpc-url "$MAINNET_RPC_URL"   # approved distributor
-cast call "$TOKEN" "recipientCap()(uint256)"             --rpc-url "$MAINNET_RPC_URL"   # approved cap
-cast call "$TOKEN" "maximumSupply()(uint256)"            --rpc-url "$MAINNET_RPC_URL"   # cap * 1e18
-cast call "$TOKEN" "totalSupply()(uint256)"              --rpc-url "$MAINNET_RPC_URL"   # == maximumSupply
-cast call "$TOKEN" "balanceOf(address)(uint256)" "$TOKEN" --rpc-url "$MAINNET_RPC_URL"  # == maximumSupply
-cast call "$TOKEN" "totalInitialRecipients()(uint256)"   --rpc-url "$MAINNET_RPC_URL"   # 0
-cast call "$TOKEN" "distributionFinalized()(bool)"       --rpc-url "$MAINNET_RPC_URL"   # false
-```
-
-## 5 · Distribution plan — bind manifest to the deployed token
-
-The token address does not exist when the snapshot is prepared, so the manifest cannot name it. The plan is the one deterministic step that binds an approved manifest to a deployed token, offline: it re-validates the manifest, verifies the manifest checksum, validates the target chain / token / source commit / runtime bytecode hash, rejects the plan if the token address appears in the recipient list, and encodes the exact `distribute(address[])` calldata per batch — then decodes each payload and asserts it equals the batch, so a mis-encoded payload never reaches a signer.
-
-Compute the on-chain runtime bytecode hash over the raw bytes (not the printed hex string):
+Offline: re-validates the manifest, rejects the token from its own recipient list, and encodes the exact `distribute` calldata per batch (then decodes it to confirm it matches).
 
 ```bash
-RT="sha256:$(cast code "$TOKEN" --rpc-url "$MAINNET_RPC_URL" | cut -c3- | xxd -r -p | sha256sum | cut -d' ' -f1)"
+RT="sha256:$(cast code "$TOKEN" --rpc-url "$RPC" | cut -c3- | xxd -r -p | sha256sum | cut -d' ' -f1)"
 
 cd ops && bun run ops -- plan \
   --manifest ../data/batches/candidate-1/manifest.json \
   --manifest-sha256 ../data/batches/candidate-1/manifest.json.sha256 \
-  --target-chain-id 1 \
-  --token "$TOKEN" \
-  --source-commit "$(git rev-parse HEAD)" \
-  --runtime-bytecode-sha256 "$RT" \
+  --target-chain-id "$CHAIN_ID" --token "$TOKEN" \
+  --source-commit "$(git rev-parse HEAD)" --runtime-bytecode-sha256 "$RT" \
   --output ../data/plans/candidate-1/plan.json && cd ..
 ```
 
-The plan carries **no nonce, fee, or gas** by design — any such value produced offline would be a guess presented as authoritative; the signer supplies those from live chain state. It exists so a human can compare the exact decoded transaction against the approved batch before signing.
+### 6 · Distribute — every batch, one at a time
 
-## 6 · Distribute — one batch at a time
-
-On-chain state persists, so batches can be sent minutes or days apart: `totalInitialRecipients` accumulates and the cap is enforced across all calls. Distribute one batch, fully reconcile it, then prepare the next. Every transaction is sent by the **distributor** account and carries **zero value**; the project owner approves the sequence and signs every transaction.
+Run for `N` = 1, 2, … through the last batch. Send one, reconcile, then the next.
 
 ```bash
-N=1
+N=1     # ← increment each round
 CALLDATA=$(jq -r ".batches[] | select(.number==$N) | .calldata" data/plans/candidate-1/plan.json)
 
-# Decode and eyeball: the recipients MUST equal the approved batch, in order.
-cast decode-calldata "distribute(address[])" "$CALLDATA"
+# Estimate this batch's gas (read-only, sends nothing):
+GAS_HEX=$(cast rpc eth_estimateGas \
+  "{\"from\":\"$MREP2_DISTRIBUTOR\",\"to\":\"$TOKEN\",\"data\":\"$CALLDATA\"}" --rpc-url "$RPC" | tr -d '"')
+cast to-dec "$GAS_HEX"
 
-# Send the plan's exact bytes — pass the calldata verbatim, do not re-encode.
-cast send "$TOKEN" --data "$CALLDATA" --rpc-url "$MAINNET_RPC_URL" --account "$ACCOUNT"
+# Eyeball, then send the plan's exact bytes (do not re-encode):
+cast decode-calldata "distribute(address[])" "$CALLDATA"     # MUST equal batch N, in order
+cast send "$TOKEN" --data "$CALLDATA" --rpc-url "$RPC" --account "$ACCOUNT"
+
+# Reconcile before the next batch:
+cast call "$TOKEN" "totalInitialRecipients()(uint256)" --rpc-url "$RPC"   # cumulative; must reach recipientCap
 ```
 
-Reconcile before the next batch (any mismatch halts distribution): exact calldata and `Transfer` event order; `wasInitialRecipient == true` and a one-token balance for each distributed address; `totalInitialRecipients` equal to the cumulative unique recipients; unchanged `totalSupply`; and `totalInitialRecipients <= recipientCap`.
+Spot-check a recipient after sending: `wasInitialRecipient(addr)` is `true` and `balanceOf(addr)` is `1000000000000000000`. `totalSupply` stays constant.
+
+### 7 · Finalize — only at the cap
+
+> **STOP.** Finalize only when `totalInitialRecipients == recipientCap` (every batch sent and reconciled), or on a **written decision** to finalize early. Finalizing before all batches are sent **locks every remaining token forever** — `distribute` reverts permanently and no recovery exists. This is the single most common irreversible mistake.
 
 ```bash
-cast call "$TOKEN" "totalInitialRecipients()(uint256)"         --rpc-url "$MAINNET_RPC_URL"   # == sum of batch sizes sent
-cast call "$TOKEN" "wasInitialRecipient(address)(bool)" <addr> --rpc-url "$MAINNET_RPC_URL"   # true
-cast call "$TOKEN" "balanceOf(address)(uint256)"        <addr> --rpc-url "$MAINNET_RPC_URL"   # 1000000000000000000
-cast call "$TOKEN" "totalSupply()(uint256)"                    --rpc-url "$MAINNET_RPC_URL"   # == maximumSupply
+cast call "$TOKEN" "totalInitialRecipients()(uint256)" --rpc-url "$RPC"   # confirm == recipientCap FIRST
+cast send "$TOKEN" "finalizeDistribution()" --rpc-url "$RPC" --account "$ACCOUNT"
+cast call "$TOKEN" "distributionFinalized()(bool)" --rpc-url "$RPC"       # true
 ```
 
-The remaining initial allocation, `(recipientCap - totalInitialRecipients) * 1e18`, is an off-chain projection — **not** a prediction of `balanceOf(token)`. Since CHECKAUGUR is transferable, a holder can send tokens back to the contract and push its live balance *above* that projection; a positive difference is not a defect. Record the transaction, block, nonce, and fee for each batch.
+## Gas
 
-## 7 · Finalize — irreversible
+Measured on this contract (Sepolia, ~1.1 gwei). Cost scales linearly with gas price.
 
-Only after every batch is reconciled with no open incident and the owner's approval:
+| Action | Gas | |
+| --- | --- | --- |
+| Deploy | ~840k | one-time |
+| `distribute`, 100 recipients | ~4.9M | per full batch |
+| `distribute`, 35 recipients | ~1.7M | partial batch |
+| `finalizeDistribution` | ~50k | one-time |
+| **335 recipients, 4 batches** | **~17.3M total** | end to end |
 
-```bash
-cast send "$TOKEN" "finalizeDistribution()" --rpc-url "$MAINNET_RPC_URL" --account "$ACCOUNT"
+**How to estimate before signing:** the **deploy** simulation (step 3, no `--broadcast`) prints the ETH cost; a **batch** uses the `eth_estimateGas` one-liner in step 6. Fund the distributor for the whole run plus headroom — at ~17.3M gas that is roughly **0.17 ETH at 10 gwei, 0.52 ETH at 30 gwei**.
 
-cast call "$TOKEN" "distributionFinalized()(bool)"     --rpc-url "$MAINNET_RPC_URL"   # true
-cast call "$TOKEN" "totalInitialRecipients()(uint256)" --rpc-url "$MAINNET_RPC_URL"   # final count
-```
+## If something is wrong — stop
 
-Read the `DistributionFinalized` event's third field, `contractBalanceAtFinalization` (= `balanceOf(token)` at finalization), and record it against the computed remaining allocation. If the balance exceeds it, the difference is tokens transferred to the contract outside distribution — investigate and record it before finalizing; no rescue or withdrawal path exists.
+Halt and escalate; never work around it.
 
-**Implications — understand these before signing:**
+- Any getter, decoded calldata, chain id, distributor, or cap ≠ the approved value.
+- `MREP2_RECIPIENT_CAP` ≠ the manifest's derived count.
+- The token address appears anywhere in the recipient list.
+- Distribution was finalized before all batches were sent → the contract is spent; **redeploy and start over.**
+- An unexplained transaction, event, or balance appears, or any action would expose a key or secret.
 
-- `distribute` reverts forever; the cap can never be topped up and no new initial recipient can be added.
-- Any undistributed reserve stays **permanently locked** — no burn, sweep, rescue, or withdrawal path exists, and the same is true for tokens holders later transfer back.
-- Ordinary `transfer`, `approve`, and `transferFrom` keep working unchanged, and `totalSupply` does not change.
-- Finalizing **below** the cap is allowed but requires a written reason.
-- Finalization is also the emergency brake: if the distributor key is compromised while you still control it, finalizing stops further wrong-recipient distribution within remaining cap — but it recovers no key, reverses no prior distribution, and moves no locked reserve.
+A wrong immutable (`distributor`, `recipientCap`) or a premature finalize is unrecoverable on-chain: **discard the contract and redeploy.**
 
-## Stop conditions and incident handling
+## Recipient policy & records
 
-Halt, preserve evidence, and escalate to the responsible humans if any of the following holds. Do not work around an incident.
-
-- A getter, decoded calldata, chain id, distributor, or cap does not match the approved value.
-- `MREP2_RECIPIENT_CAP` is not exactly the manifest's derived count.
-- The predicted or deployed token address appears anywhere in the recipient list.
-- The distributor is the zero address or the token contract's own address.
-- Simulation, deployment, verification, or any post-deployment getter does not match expectation.
-- An unexplained transaction, event, address, nonce, or balance appears.
-- Any action would expose a key, seed phrase, keystore, or secret.
-
-| Incident | Immediate action |
-| --- | --- |
-| Wrong recipient list | Halt before signing. A wrong list already partly distributed cannot be reversed — record scope and escalate. |
-| Wrong chain | Halt; a plan's `targetChainId` must match the deployment chain. Nothing signed on the wrong chain is valid distribution. |
-| Wrong / compromised distributor | The distributor is immutable. A wrong one means discard and redeploy. On compromise, consider immediate `finalizeDistribution` while the owner retains control — it stops further wrong-recipient distribution but recovers no key and reverses nothing. |
-| Incorrect calldata | Halt; the plan's decoded calldata must match the signing device byte for byte. Never sign calldata that does not decode to the approved batch. |
-| Failed reconciliation | Halt before the next batch; never finalize with an unresolved discrepancy. |
-
-Key loss can prevent distribution and finalization; compromise can cause wrong-recipient distribution within remaining cap or premature finalization. Neither creates an on-chain recovery path — none exists.
-
-## Records
-
-Retain, per deployment: the chain and contract address; deployment transaction, block, and deployer; source commit and build settings; constructor arguments and artifact hashes; distributor and cap; manifests, plans, and checksums; every calldata payload and transaction; event and counter reconciliations; finalization state; incident records; and confirmation that agents accessed no key and signed or broadcast nothing.
-
-## Public communications (prepared, not published)
-
-If explorer/wallet metadata or user messaging is prepared, a human publishes it under a separate task. Do not invent missing values — leave placeholders. Any package must state the exact name/symbol/decimals, the fixed supply with no post-deployment minting, the absence of taxes/blacklist/pause/owner/roles/upgradeability/project-supported liquidity, that the token performs no migration, and that receiving it requires no wallet connection, approval, swap, claim, bridge, or payment. Do not promise automatic wallet display, and do not describe testing or review as an audit.
+The recipient list is a **project-owner decision made before deployment** — approved in writing (source chain and contracts, snapshot block, inclusion/exclusion rules, dedup, minimum balance). Do not scrape an explorer holder list; no address class is automatically valid or invalid, and bytecode presence is never a filter. Retain per deployment: the chain and contract address; deploy tx, block, and deployer; source commit and build settings; constructor args; distributor and cap; manifest and plan checksums; every calldata and transaction; and the finalization state.
