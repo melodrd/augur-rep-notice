@@ -72,111 +72,59 @@ contract MigrateRepV2TokenTest is Test {
     // Construction and metadata
     // ------------------------------------------------------------------
 
-    function test_metadata_name() public view {
+    function test_metadata_and_constants() public view {
         assertEq(token.name(), "CHECK AUGUR MIGRATION");
-    }
-
-    function test_metadata_symbol() public view {
         assertEq(token.symbol(), "CHECKAUGUR");
-    }
-
-    function test_metadata_decimals_is_18() public view {
         assertEq(token.decimals(), 18);
-    }
-
-    function test_tokenPerRecipient_is_one_ether() public view {
         assertEq(token.TOKEN_PER_RECIPIENT(), 1 ether);
-    }
-
-    function test_maxBatchSize_is_200() public view {
         assertEq(token.MAX_BATCH_SIZE(), 200);
     }
 
-    function test_distributor_is_exact() public view {
+    function test_initial_state() public view {
         assertEq(token.distributor(), DISTRIBUTOR);
-    }
-
-    function test_recipientCap_is_exact() public view {
         assertEq(token.recipientCap(), CAP);
-    }
-
-    function test_maximumSupply_is_cap_times_unit() public view {
         assertEq(token.maximumSupply(), CAP * ONE);
-    }
-
-    function test_totalSupply_equals_maximumSupply() public view {
         assertEq(token.totalSupply(), CAP * ONE);
-    }
-
-    function test_all_supply_held_by_contract() public view {
         assertEq(token.balanceOf(address(token)), CAP * ONE);
-    }
-
-    function test_distributor_starts_with_zero() public view {
         assertEq(token.balanceOf(DISTRIBUTOR), 0);
-    }
-
-    function test_deployer_starts_with_zero() public view {
         assertEq(token.balanceOf(address(this)), 0);
-    }
-
-    function test_totalInitialRecipients_starts_zero() public view {
         assertEq(token.totalInitialRecipients(), 0);
-    }
-
-    function test_distribution_starts_unfinalized() public view {
         assertFalse(token.distributionFinalized());
     }
 
-    function test_constructor_reverts_on_zero_distributor() public {
+    /// @dev Constructor validation and its exact precedence: zero distributor, token-contract
+    ///      distributor, zero cap, then supply overflow — asserted with the first-failing selector
+    ///      even when several inputs are invalid at once. A deployer can predict the address its next
+    ///      CREATE produces and pass it as the distributor; that deployment would be permanently
+    ///      unusable (only the token could call distribute/finalize, and it has no self-call), so it
+    ///      is rejected. The prediction is self-checking here: were it wrong, the
+    ///      TokenContractDistributor cases would not revert as expected.
+    function test_constructor_validation_and_precedence() public {
+        uint256 overflowCap = type(uint256).max / ONE + 1;
+
         vm.expectRevert(MigrateRepV2Token.ZeroDistributor.selector);
         new MigrateRepV2Token(address(0), CAP);
-    }
 
-    function test_constructor_reverts_on_zero_cap() public {
-        vm.expectRevert(MigrateRepV2Token.ZeroRecipientCap.selector);
-        new MigrateRepV2Token(DISTRIBUTOR, 0);
-    }
-
-    /// @dev Pins the prediction itself: the address computed from the deployer and its next nonce
-    ///      is the address the following CREATE actually produces. The self-distributor tests below
-    ///      rely on this, and it cannot be asserted inside them because an expected revert makes
-    ///      the reverted CREATE yield a placeholder address.
-    function test_computeCreateAddress_predicts_the_next_token_address() public {
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
-        MigrateRepV2Token next = new MigrateRepV2Token(DISTRIBUTOR, CAP);
-        assertEq(address(next), predicted);
-    }
-
-    /// @dev A deployer can predict the address its next CREATE will produce and pass it as the
-    ///      distributor. The result would be permanently unusable: only the token contract could
-    ///      call distribute or finalizeDistribution, and it has no self-call mechanism.
-    function test_constructor_reverts_when_distributor_is_predicted_token_address() public {
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
-        vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
-        new MigrateRepV2Token(predicted, CAP);
-    }
-
-    /// @dev Precedence: zero distributor is rejected before the token-contract distributor check.
-    ///      The two are disjoint in practice (a contract is never at address(0)), so this pins the
-    ///      first position with a simultaneously-invalid cap.
-    function test_constructor_precedence_zero_distributor_before_zero_cap() public {
+        // zero distributor wins over a simultaneously-zero cap
         vm.expectRevert(MigrateRepV2Token.ZeroDistributor.selector);
         new MigrateRepV2Token(address(0), 0);
-    }
 
-    /// @dev Precedence: the token-contract distributor check runs before the zero-cap check.
-    function test_constructor_precedence_self_distributor_before_zero_cap() public {
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
         vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
-        new MigrateRepV2Token(predicted, 0);
-    }
+        new MigrateRepV2Token(vm.computeCreateAddress(address(this), vm.getNonce(address(this))), CAP);
 
-    /// @dev Precedence: the token-contract distributor check runs before the overflow check.
-    function test_constructor_precedence_self_distributor_before_overflow() public {
-        address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
+        // token-contract distributor wins over a zero cap
         vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
-        new MigrateRepV2Token(predicted, type(uint256).max / ONE + 1);
+        new MigrateRepV2Token(vm.computeCreateAddress(address(this), vm.getNonce(address(this))), 0);
+
+        // token-contract distributor wins over supply overflow
+        vm.expectRevert(MigrateRepV2Token.TokenContractDistributor.selector);
+        new MigrateRepV2Token(vm.computeCreateAddress(address(this), vm.getNonce(address(this))), overflowCap);
+
+        vm.expectRevert(MigrateRepV2Token.ZeroRecipientCap.selector);
+        new MigrateRepV2Token(DISTRIBUTOR, 0);
+
+        vm.expectRevert(MigrateRepV2Token.RecipientCapOverflow.selector);
+        new MigrateRepV2Token(DISTRIBUTOR, overflowCap);
     }
 
     /// @dev An ordinary EOA distributor is unaffected by the self-address rejection.
@@ -199,12 +147,6 @@ contract MigrateRepV2TokenTest is Test {
         assertEq(viaContract.balanceOf(ALICE), ONE);
     }
 
-    function test_constructor_reverts_on_cap_overflow() public {
-        uint256 tooLarge = type(uint256).max / ONE + 1;
-        vm.expectRevert(MigrateRepV2Token.RecipientCapOverflow.selector);
-        new MigrateRepV2Token(DISTRIBUTOR, tooLarge);
-    }
-
     function test_constructor_accepts_max_nonoverflowing_cap() public {
         uint256 maxCap = type(uint256).max / ONE;
         MigrateRepV2Token big = new MigrateRepV2Token(DISTRIBUTOR, maxCap);
@@ -221,110 +163,72 @@ contract MigrateRepV2TokenTest is Test {
 
     // ------------------------------------------------------------------
     // Standard ERC-20 integration (inherited OpenZeppelin behavior)
+    //
+    // The contract overrides none of the ERC-20 surface, so OpenZeppelin's own suite owns exhaustive
+    // coverage. These tests confirm the inherited behavior is reachable and intact through this
+    // contract; the invariant suite additionally exercises transfer/approve/transferFrom in bulk.
     // ------------------------------------------------------------------
 
-    function test_transfer_succeeds_and_returns_true() public {
+    function test_standard_erc20_passthrough_works() public {
         _distribute(_one(ALICE));
+
+        // transfer moves balance and returns true
         vm.prank(ALICE);
-        bool ok = token.transfer(BOB, ONE);
-        assertTrue(ok);
+        assertTrue(token.transfer(BOB, ONE));
         assertEq(token.balanceOf(BOB), ONE);
         assertEq(token.balanceOf(ALICE), 0);
-    }
 
-    function test_zero_value_transfer_succeeds_and_emits_Transfer() public {
+        // zero-value transfer succeeds and emits Transfer
         vm.expectEmit(true, true, false, true, address(token));
-        emit IERC20.Transfer(ALICE, BOB, 0);
-        vm.prank(ALICE);
-        bool ok = token.transfer(BOB, 0);
-        assertTrue(ok);
-    }
-
-    function test_recipient_may_accumulate_multiple_tokens() public {
-        _distribute(_one(ALICE));
-        _distribute(_one(BOB));
-        vm.prank(ALICE);
-        token.transfer(BOB, ONE);
-        assertEq(token.balanceOf(BOB), 2 * ONE);
-    }
-
-    function test_self_transfer_behaves_normally() public {
-        _distribute(_one(ALICE));
-        vm.prank(ALICE);
-        token.transfer(ALICE, ONE);
-        assertEq(token.balanceOf(ALICE), ONE);
-    }
-
-    function test_transfer_to_zero_uses_oz_error() public {
-        _distribute(_one(ALICE));
-        vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InvalidReceiver.selector, address(0)));
-        token.transfer(address(0), ONE);
-    }
-
-    function test_transfer_insufficient_balance_uses_oz_error() public {
-        vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, ALICE, 0, ONE));
-        token.transfer(BOB, ONE);
-    }
-
-    function test_approve_succeeds_emits_and_stores_allowance() public {
-        vm.expectEmit(true, true, false, true, address(token));
-        emit IERC20.Approval(ALICE, BOB, ONE);
-        vm.prank(ALICE);
-        bool ok = token.approve(BOB, ONE);
-        assertTrue(ok);
-        assertEq(token.allowance(ALICE, BOB), ONE);
-    }
-
-    function test_replacement_approval_overwrites() public {
-        vm.startPrank(ALICE);
-        token.approve(BOB, ONE);
-        token.approve(BOB, 5 * ONE);
-        vm.stopPrank();
-        assertEq(token.allowance(ALICE, BOB), 5 * ONE);
-    }
-
-    function test_transferFrom_with_finite_allowance_decreases() public {
-        _distribute(_one(ALICE));
-        vm.prank(ALICE);
-        token.approve(BOB, 3 * ONE);
-
+        emit IERC20.Transfer(BOB, ALICE, 0);
         vm.prank(BOB);
-        bool ok = token.transferFrom(ALICE, BOB, ONE);
-        assertTrue(ok);
-        assertEq(token.balanceOf(BOB), ONE);
-        assertEq(token.allowance(ALICE, BOB), 2 * ONE);
+        assertTrue(token.transfer(ALICE, 0));
+
+        // approve stores the allowance, emits Approval, and returns true
+        vm.expectEmit(true, true, false, true, address(token));
+        emit IERC20.Approval(BOB, ALICE, 3 * ONE);
+        vm.prank(BOB);
+        assertTrue(token.approve(ALICE, 3 * ONE));
+        assertEq(token.allowance(BOB, ALICE), 3 * ONE);
+
+        // finite transferFrom moves the token and decreases the allowance
+        vm.prank(ALICE);
+        assertTrue(token.transferFrom(BOB, ALICE, ONE));
+        assertEq(token.balanceOf(ALICE), ONE);
+        assertEq(token.allowance(BOB, ALICE), 2 * ONE);
+
+        // ordinary token movement never changes total supply
+        assertEq(token.totalSupply(), CAP * ONE);
     }
 
-    function test_transferFrom_with_max_allowance_is_infinite() public {
+    function test_max_allowance_is_treated_as_infinite() public {
         _distribute(_one(ALICE));
         vm.prank(ALICE);
         token.approve(BOB, type(uint256).max);
-
         vm.prank(BOB);
         token.transferFrom(ALICE, BOB, ONE);
         // OpenZeppelin does not decrease an infinite (max) allowance.
         assertEq(token.allowance(ALICE, BOB), type(uint256).max);
     }
 
-    function test_transferFrom_insufficient_allowance_uses_oz_error() public {
+    /// @dev Standard OpenZeppelin errors are preserved for transfer and allowance failures, not
+    ///      wrapped in project-specific errors.
+    function test_standard_erc20_errors_are_not_wrapped() public {
         _distribute(_one(ALICE));
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InvalidReceiver.selector, address(0)));
+        token.transfer(address(0), ONE);
+
+        vm.prank(BOB); // BOB holds nothing
+        vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, BOB, 0, ONE));
+        token.transfer(ALICE, ONE);
+
         vm.prank(ALICE);
         token.approve(BOB, ONE - 1);
-
         vm.prank(BOB);
         vm.expectRevert(abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, BOB, ONE - 1, ONE));
         token.transferFrom(ALICE, BOB, ONE);
-    }
-
-    function test_standard_transfers_do_not_change_total_supply() public {
-        _distribute(_one(ALICE));
-        uint256 before = token.totalSupply();
-        vm.prank(ALICE);
-        token.transfer(BOB, ONE);
-        assertEq(token.totalSupply(), before);
-        assertEq(token.totalSupply(), CAP * ONE);
     }
 
     // ------------------------------------------------------------------
@@ -454,49 +358,44 @@ contract MigrateRepV2TokenTest is Test {
         assertTrue(token.wasInitialRecipient(address(this)));
     }
 
-    /// @dev Precedence: the zero address is rejected before the token contract.
-    function test_precedence_zero_before_token_contract() public {
-        address[] memory r = new address[](2);
-        r[0] = address(0);
-        r[1] = address(token);
+    /// @dev Precedence around the token-contract recipient check: the zero address is rejected
+    ///      before it; it is rejected before the already-distributed check (a duplicate of itself)
+    ///      and before a prior recipient later in the batch; and the recipient cap is still checked
+    ///      before any per-recipient validation, including the token contract.
+    function test_token_contract_recipient_precedence() public {
+        // zero address before the token contract
+        address[] memory zeroThenToken = new address[](2);
+        zeroThenToken[0] = address(0);
+        zeroThenToken[1] = address(token);
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.ZeroRecipient.selector, 0));
-        token.distribute(r);
-    }
+        token.distribute(zeroThenToken);
 
-    /// @dev Precedence: the token contract is rejected before the already-distributed check, for
-    ///      the same repeated address. Without the token-contract check, index 1 would report
-    ///      RecipientAlreadyDistributed instead.
-    function test_precedence_token_contract_before_duplicate_of_itself() public {
-        address[] memory r = new address[](2);
-        r[0] = address(token);
-        r[1] = address(token);
+        // the token contract before the already-distributed check, for a duplicate of itself
+        address[] memory tokenTwice = new address[](2);
+        tokenTwice[0] = address(token);
+        tokenTwice[1] = address(token);
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, 0));
-        token.distribute(r);
-    }
+        token.distribute(tokenTwice);
 
-    /// @dev Precedence: the token contract is rejected before a prior recipient later in the batch.
-    function test_precedence_token_contract_before_prior_recipient() public {
+        // the token contract before a prior recipient later in the batch
         _distribute(_one(ALICE));
-        address[] memory r = new address[](2);
-        r[0] = address(token);
-        r[1] = ALICE; // already distributed in the prior call
+        address[] memory tokenThenPrior = new address[](2);
+        tokenThenPrior[0] = address(token);
+        tokenThenPrior[1] = ALICE; // already distributed in the prior call
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.TokenContractRecipient.selector, 0));
-        token.distribute(r);
-    }
+        token.distribute(tokenThenPrior);
 
-    /// @dev The outer precedence is unchanged: the recipient cap is still checked before any
-    ///      per-recipient validation, including the token contract.
-    function test_precedence_recipient_cap_before_token_contract() public {
+        // the recipient cap before any per-recipient validation, including the token contract
         MigrateRepV2Token capped = new MigrateRepV2Token(DISTRIBUTOR, 1);
-        address[] memory r = new address[](2);
-        r[0] = address(capped);
-        r[1] = address(capped);
+        address[] memory overCap = new address[](2);
+        overCap[0] = address(capped);
+        overCap[1] = address(capped);
         vm.prank(DISTRIBUTOR);
         vm.expectRevert(abi.encodeWithSelector(MigrateRepV2Token.RecipientCapExceeded.selector, 2, 1));
-        capped.distribute(r);
+        capped.distribute(overCap);
     }
 
     function test_recipient_from_earlier_batch_fails() public {
@@ -697,29 +596,25 @@ contract MigrateRepV2TokenTest is Test {
         token.distribute(r);
     }
 
-    function test_transfer_after_finalization_succeeds() public {
-        _distribute(_one(ALICE));
-        vm.prank(DISTRIBUTOR);
-        token.finalizeDistribution();
-        vm.prank(ALICE);
-        assertTrue(token.transfer(BOB, ONE));
-    }
-
-    function test_approve_after_finalization_succeeds() public {
-        vm.prank(DISTRIBUTOR);
-        token.finalizeDistribution();
-        vm.prank(ALICE);
-        assertTrue(token.approve(BOB, ONE));
-    }
-
-    function test_transferFrom_after_finalization_succeeds() public {
+    /// @dev Finalization closes distribution only; standard transfer, approve, and transferFrom all
+    ///      continue to work afterward.
+    function test_standard_erc20_continues_after_finalization() public {
         _distribute(_one(ALICE));
         vm.prank(ALICE);
         token.approve(BOB, ONE);
+
         vm.prank(DISTRIBUTOR);
         token.finalizeDistribution();
+
+        // approve still works after finalization
+        vm.prank(ALICE);
+        assertTrue(token.approve(BOB, ONE));
+        // transferFrom (BOB spends ALICE's approved token) still works
         vm.prank(BOB);
         assertTrue(token.transferFrom(ALICE, BOB, ONE));
+        // ordinary transfer (BOB moves the token onward) still works
+        vm.prank(BOB);
+        assertTrue(token.transfer(ALICE, ONE));
     }
 
     function test_unused_reserve_remains_locked_after_finalization() public {
