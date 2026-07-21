@@ -202,9 +202,13 @@ Measured on this contract (Sepolia, ~1.1 gwei). Cost scales linearly with gas pr
 | `distribute`, 100 recipients | ~4.9M | per full batch |
 | `distribute`, 35 recipients | ~1.7M | partial batch |
 | `finalizeDistribution` | ~50k | one-time |
-| **335 recipients, 4 batches** | **~17.3M total** | end to end |
+| **500 recipients, 5 batches** | **~25.0M total** | end to end |
 
-**How to estimate before signing:** the **deploy** simulation (step 3, no `--broadcast`) prints the ETH cost; a **batch** uses the `eth_estimateGas` one-liner in step 6. Fund the distributor for the whole run plus headroom — at ~17.3M gas that is roughly **0.17 ETH at 10 gwei, 0.52 ETH at 30 gwei**.
+The end-to-end figure is one deploy, five full `distribute(100)` batches, and one finalize (`~840k + 5 × ~4.9M + ~50k`). A run whose last batch is partial substitutes the partial-batch row for one full batch.
+
+**How to estimate before signing:** the **deploy** simulation (step 3, no `--broadcast`) prints the ETH cost; a **batch** uses the `eth_estimateGas` one-liner in step 6. Both read live chain state — these are the figures to fund against.
+
+Cost is linear in gas price: the full ~25.0M-gas run costs **~0.025 ETH per gwei** of gas price, so multiply by whatever price the chain is quoting. As of 2026-07-21 mainnet gas was ~0.17 gwei with ETH ~$1,930, which puts the whole run at **~0.0043 ETH (~$8)**. Gas price is a volatile network property, independent of the ETH/USD price, and rises during congestion — size funding to the highest price you're willing to sign at, and confirm against the live `eth_estimateGas` reading at broadcast time.
 
 ## If something is wrong — stop
 
