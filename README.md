@@ -38,6 +38,7 @@ At `3ae5d82`, on the pinned toolchain, 122 Forge tests and 70 TypeScript tests p
 
 | Document | Contents |
 | --- | --- |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Mainnet operator runbook: copy-paste commands from approved list to finalization |
 | [docs/SPEC.md](docs/SPEC.md) | Authoritative contract behavior |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Release procedure and post-deployment verification |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Recipient policy, distribution, reconciliation, finalization |
@@ -66,4 +67,4 @@ make coverage     # production coverage
 make gas          # isolated gas measurements
 ```
 
-The canonical build uses Solidity 0.8.36, EVM Osaka, optimizer enabled at 200 runs, via-IR disabled, and pinned OpenZeppelin Contracts v5.6.1. Deployment and distribution procedures live in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md); this README does not duplicate them.
+The canonical build uses Solidity 0.8.36, EVM Osaka, optimizer enabled at 200 runs, via-IR disabled, and pinned OpenZeppelin Contracts v5.6.1. Deployment and distribution procedures live in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/OPERATIONS.md](docs/OPERATIONS.md); this README does not duplicate them. Operators running a mainnet release start at [docs/RUNBOOK.md](docs/RUNBOOK.md), the condensed copy-paste path that ties those two documents together.
