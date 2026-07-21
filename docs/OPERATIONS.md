@@ -63,18 +63,24 @@ git rev-parse HEAD                            # record this commit; the plan bin
 
 ### 1 · Provenance — how the list was chosen
 
-Records the snapshot's origin. The tool validates **shape, not truth**, so it is never hand-edited. Supply two files to hash: the frozen snapshot export and a written ruleset.
+Records where the list came from. The tool validates **shape, not truth**, so it is never hand-edited. Two files already in the repo are hashed into it:
+
+- `data/snapshots/approved-recipients.json` — the frozen recipient export (becomes `sourceDataSha256`).
+- `data/snapshots/ruleset.md` — the written inclusion rules (becomes `rulesetSha256`). **Fill in its `Snapshot block` line first** and make it equal `$BLOCK` below; otherwise the hash covers a placeholder.
+
+The snapshot chain is always Ethereum mainnet (chainId `1`). On a mainnet deploy `SNAPSHOT_RPC` is just your `$RPC`; only in a Sepolia rehearsal do they differ (`$RPC` is Sepolia, `SNAPSHOT_RPC` stays a mainnet endpoint).
 
 ```bash
-BLOCK=<snapshot block number>
+export SNAPSHOT_RPC="$RPC"     # mainnet deploy: same endpoint. Sepolia rehearsal: a separate mainnet endpoint.
+BLOCK=<snapshot block number>  # the mainnet block the snapshot was taken at; must equal ruleset.md's "Snapshot block"
 
 jq -n \
   --argjson sourceChainId 1 \
   --arg snapshotBlockNumber "$BLOCK" \
   --arg snapshotBlockHash   "$(cast block "$BLOCK" -f hash --rpc-url "$SNAPSHOT_RPC")" \
-  --arg sourceDataSha256    "sha256:$(sha256sum <frozen-snapshot-export> | cut -d' ' -f1)" \
+  --arg sourceDataSha256    "sha256:$(sha256sum data/snapshots/approved-recipients.json | cut -d' ' -f1)" \
   --arg rulesetId           "rep-notice-v1" \
-  --arg rulesetSha256       "sha256:$(sha256sum <ruleset-file> | cut -d' ' -f1)" \
+  --arg rulesetSha256       "sha256:$(sha256sum data/snapshots/ruleset.md | cut -d' ' -f1)" \
   '{
     sourceChainId: $sourceChainId,
     snapshotBlockNumber: $snapshotBlockNumber,
@@ -86,7 +92,9 @@ jq -n \
   }' > data/snapshots/approved-provenance.json
 ```
 
-`SNAPSHOT_RPC` is the snapshot's chain (mainnet, chain `1`) — for a Sepolia rehearsal this is a mainnet endpoint, **not** `$RPC`. Each field is validated: `snapshotBlockNumber` a positive integer string, `snapshotBlockHash` `0x`+64 hex, the two `sha256:` fields `sha256:`+64 lowercase hex, `sourceContracts` non-empty and unique.
+`sourceContracts` are the two Augur reputation-token contracts on mainnet — REP v1 `0x1985365e9f78359a9B6AD760e32412f4a445E862` and REPv2 `0x221657776846890989a759BA2973e427DfF5C9bB`, the same pair listed under **Source** in `ruleset.md`. They define what "REP holder" means; leave them unchanged for an Augur snapshot.
+
+Each field is validated: `snapshotBlockNumber` a positive integer string, `snapshotBlockHash` `0x`+64 hex, the two `sha256:` fields `sha256:`+64 lowercase hex, `sourceContracts` non-empty and unique. `SNAPSHOT_RPC` is always a mainnet (chain `1`) endpoint — on a Sepolia rehearsal that means it is **not** `$RPC`.
 
 ### 2 · Manifest — freeze the set, derive the cap
 
